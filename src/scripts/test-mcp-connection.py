@@ -33,8 +33,11 @@ async def main():
                 logger.info(f"検出ツール: {[t.name for t in tools]}")
                 
                 # 🟢 ツール実行
-                logger.info("Calling tool 'run_deep_research' with query 'テスト'...")
-                result = await session.call_tool("run_deep_research", arguments={"query": "テスト"})
+                logger.info("Calling tool 'run_deep_research' with query 'テスト' (timeout=1800s)...")
+                result = await asyncio.wait_for(
+                    session.call_tool("run_deep_research", arguments={"query": "テスト"}),
+                    timeout=1800.0
+                )
                 logger.info(f"ツール実行結果: {result}")
     except Exception as e:
         logger.exception("❌ 接続または実行中にエラーが発生しました:")
