@@ -1,14 +1,14 @@
 # ホーム画面（index.html）のレイアウトと運用ルール
 
-トップページ `index.html` は **手書きせず**、原則として `scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
+トップページ `public/index.html` は **手書きせず**、原則として `scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
 
 ## ファイルの役割
 
 | パス | 役割 |
 |------|------|
-| `index.html` | ホーム。記事一覧・カテゴリ・新着（スクリプト生成） |
-| `articles/*.html` | 各質問ノート本文 |
-| `styles/site.css` | 共通スタイル（新着カード・横長カード行など） |
+| `public/index.html` | ホーム。記事一覧・カテゴリ・新着（スクリプト生成） |
+| `public/articles/*.html` | 各質問ノート本文 |
+| `public/styles/site.css` | 共通スタイル（新着カード・横長カード行など） |
 | `scripts/sync-article-dates.py` | 作成日同期・index 再生成 |
 
 ## ページ構成（上から順）
@@ -61,11 +61,11 @@
 ```
 
 - タイトルは中央カラムに幅を確保し、細い列での不自然な折り返しを避ける
-- スタイルの詳細は `styles/site.css` の `.article-row*` を参照
+- スタイルの詳細は `public/styles/site.css` の `.article-row*` を参照
 
 ## 記事を追加するときの手順
 
-1. `articles/<slug>.html` を追加（既存記事と同じ HTML 構成）
+1. `public/articles/<slug>.html` を追加（既存記事と同じ HTML 構成）
 2. `scripts/sync-article-dates.py` の **`ARTICLE_CLUSTER`** に `ファイル名 → クラスタ ID` を登録
 3. 必要なら **`CLUSTERS` / `CLUSTER_ORDER`** を更新（新サブカテゴリのとき）
 4. リポジトリルートで実行:
@@ -74,13 +74,13 @@
 python3 scripts/sync-article-dates.py
 ```
 
-5. `index.html` と全記事の作成日が更新されることを確認
+5. `public/index.html` と全記事の作成日が更新されることを確認
 
-`index.html` を手で直した場合、次回スクリプト実行で上書きされます。カードの文言を変えたいときは、一度 index に反映した内容が `parse_index_cards()` で読み取れる状態にしてからスクリプトを回すか、スクリプト側のデータ定義を拡張してください。
+`public/index.html` を手で直した場合、次回スクリプト実行で上書きされます。カードの文言を変えたいときは、一度 index に反映した内容が `parse_index_cards()` で読み取れる状態にしてからスクリプトを回すか、スクリプト側のデータ定義を拡張してください。
 
 ## 変更してはいけないこと（運用上）
 
-- トピック別サブディレクトリ（`programming/` など）に記事を分けない — 記事は **`articles/` のみ**
+- トピック別サブディレクトリ（`programming/` など）に記事を分けない — 記事は **`public/articles/` のみ**
 - ホームのカテゴリをフォルダ名と一致させようとしない
 - 作成日を手入力でばらつかせない（git と同期スクリプトを正とする）
 
