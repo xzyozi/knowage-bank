@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>プロジェクト途中でCursorからKIROに乗り換える際の手順と違い | 技術質問ノート</title>
+    <link rel="stylesheet" href="../styles/site.css">
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="../index.html">技術質問ノート</a>
+        </div>
+    </header>
+
+    <main class="page">
+        <article>
+            
+            <!-- ① ヒーローエリア -->
+            <header class="hero">
+                <p class="eyebrow">AI > 開発ワークフロー</p>
+                <h1>プロジェクト途中でCursorからKIROに乗り換える際の手順と違い</h1>
+                <p class="article-created"><time datetime="2026-06-15">作成日: 2026年6月15日</time></p>
+                <p class="lead">KIROは、仕様駆動開発を核としたAWSのAI統合開発環境であり、プロトタイプからプロダクションまでの一貫した開発プロセスを支援します。Cursorと比較して設計とコードベースの同期に優位性があり、プロジェクト移行には段階的なワークフローの構築が重要となります。</p>
+            </header>
+
+            <!-- ② 簡潔なQ&Aセクション -->
+            <section class="qa" aria-labelledby="quick-answer">
+                <h2 id="quick-answer">簡潔なQ&amp;A</h2>
+                <dl>
+                    
+                    <dt>Q. KIROの最大の特徴は何ですか？</dt>
+                    <dd>A. 自然言語プロンプトをEARS記法を用いた明確な要件に変換し、設計・タスク化・実装へと段階的に導く「仕様駆動開発」ワークフローです。</dd>
+                    
+                    <dt>Q. Cursorと比較したKIROの優位性はどこにありますか？</dt>
+                    <dd>A. 高度なコーディングエージェント機能を持つCursorに対し、KIROはドキュメント不一致を防止する「仕様とコードの同期」や、プロジェクト全体の振る舞いを規定するSteering Filesなどの構造的管理に強みがあります。</dd>
+                    
+                    <dt>Q. プロジェクト途中での移行で推奨される手法は？</dt>
+                    <dd>A. KIROへ完全移行する前に、Cursor内で`.cursor/commands`を活用してKIROのワークフロー（要件定義・設計・タスク化）を模倣し、順応する手法が有効です。</dd>
+                    
+                </dl>
+            </section>
+
+            <!-- ③ 本文セクション群 -->
+            
+            <h2>KIROの基本機能と特性</h2>
+            
+            <p>KIROはCode OSSをベースに構築されており、VS Codeの設定やOpen VSX互換プラグインを維持しながら、高度なAI統合機能を提供します。</p>
+            
+            <p>最大の特徴である「仕様駆動開発（Kiro Spec）」では、単一のプロンプトからEARS記法を用いたユーザーストーリーを展開し、データフロー図やAPIエンドポイントなどの設計文書を自動生成します。</p>
+            
+            
+            
+            
+            <h3>自動化と構成管理</h3>
+            
+            <p>Agent Hooksによりファイルの保存等のイベントをトリガーにAIエージェントを起動し、バックグラウンドでユニットテストやコード最適化を実行します。また、Steering Filesによってプロジェクト固有のコーディング標準を規定可能です。</p>
+            
+            
+            <h3>AWS環境との統合と運用</h3>
+            
+            <p>Amazon Q Developerと連携し、AWS IAM Identity Centerを通じて組織単位での従量管理やユーザーごとのプラン割り当てが可能です。クレジットシステムによりVibe modeとSpec modeのリクエストを一元管理します。</p>
+            
+            
+            
+            
+            <h2>Cursorとの主要な差異</h2>
+            
+            <p>Cursorは高度なコーディングエージェントとしての機能（Background AgentやBugbot等）に強みを持つ一方、KIROは仕様とコードベースの同期によるドキュメント不一致の防止に重点を置いています。</p>
+            
+            <p>UI/UXにおいてもCursorは思考型モデルの表示などの特徴があるのに対し、KIROはタスク進捗状況や実装計画リスト、AIによる作業ナレーションの表示に特化しています。</p>
+            
+            
+            
+            
+            <h2>プロジェクト途中での移行における課題と手順</h2>
+            
+            <p>途中のプロジェクトを移行する際は、要件定義の不備やデータ移行のリスク（文字コード問題やマスタデータの重複等）に対して慎重な管理が必要です。</p>
+            
+            <p>KIROへ順応するための具体的な手順として、まずディレクトリ構造（specs/、steering/、hooks/）を定義し、Cursorのコマンド機能を活用して要件・設計・TODOリストを段階的に生成するワークフローの模倣から開始することが推奨されます。</p>
+            
+            
+            
+            
+
+            <!-- ④ 要点セクション -->
+            <section class="note">
+                <h2>要点</h2>
+                <p>この記事の要点は以下の通りです。</p>
+                <ul>
+                    
+                    <li>仕様駆動開発（Spec-driven development）によるドキュメントとコードの同期</li>
+                    
+                    <li>Agent HooksやSteering Filesを用いた構造的なプロジェクト管理</li>
+                    
+                    <li>Cursorからの移行における段階的なワークフロー模倣手法の活用</li>
+                    
+                </ul>
+            </section>
+
+            <!-- ⑤ 参考資料セクション -->
+            <section class="related" aria-label="参考資料">
+                <h2>参考資料</h2>
+                <ul>
+                    
+                    <li><a href="https://aws.amazon.com/jp/blogs/news/kiroweeeeek-in-japan-day-1-implementation-guide/" target="_blank">AWS Blog: KIRO implementation guide</a></li>
+                    
+                    <li><a href="https://aws.amazon.com/jp/blogs/news/introducing-kiro/" target="_blank">AWS Blog: Introducing KIRO</a></li>
+                    
+                    <li><a href="https://kiro.dev/" target="_blank">KIRO Official Site</a></li>
+                    
+                    <li><a href="https://cursor.com/ja" target="_blank">Cursor Official Site</a></li>
+                    
+                </ul>
+            </section>
+
+            <!-- ⑥ 関連ナビゲーション -->
+            <nav class="related" aria-label="関連リンク">
+                <p><a href="../index.html">インデックスへ戻る</a></p>
+            </nav>
+
+        </article>
+    </main>
+
+    <footer class="site-footer">
+        <p>技術質問ノート</p>
+    </footer>
+</body>
+
+</html>

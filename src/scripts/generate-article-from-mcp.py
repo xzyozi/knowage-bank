@@ -24,7 +24,12 @@ spec.loader.exec_module(sync_article_dates)
 
 async def main():
     sse_url = "http://localhost:8000/sse"
-    query = "MCP（Model Context Protocol）の概要と、主要なトランスポート（stdio, sse）の違いについて調査してください"
+    query = (
+        "AWSのAIコードエディタ/開発環境「KIRO」の概要、Cursorとの違い、"
+        "およびプロジェクトの途中でCursorからKIROに乗り換える際の手順や具体的な作業内容について、"
+        "以下の参考記事の情報を踏まえて調査・整理してください："
+        "https://qiita.com/hosomatu/items/16f1d36c9b1bf94af983"
+    )
     research_text = ""
 
     logger.info("=== STEP 1: Deep Research MCP によるリサーチ実行 ===")
@@ -171,7 +176,7 @@ async def main():
 
     logger.info("=== STEP 3: ArticleBuilder によるHTML記事のビルド ===")
     builder = ArticleBuilder()
-    filename = "mcp-overview-transports.html"
+    filename = "aws-kiro-transition-from-cursor.html"
     builder.save_article(data, filename)
 
     logger.info("=== STEP 4: sync-article-dates によるインデックス同期 ===")
