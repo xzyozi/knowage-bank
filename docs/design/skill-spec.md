@@ -35,12 +35,12 @@ description: >
 
 ```
 Phase 1: 調査
-├── index.html を読み込み、既存記事一覧を把握
+├── public/index.html を読み込み、既存記事一覧を把握
 ├── docs/homepage.md を読み、レイアウトルールを確認
 ├── scripts/sync-article-dates.py を読み、ARTICLE_CLUSTER を確認
-├── styles/site.css を読み、使用可能なクラスを確認
-├── 関連する articles/*.html を読み、テンプレート構造を確認
-└── images/ を確認、必要な図がないか判断
+├── public/styles/site.css を読み、使用可能なクラスを確認
+├── 関連する public/articles/*.html を読み、テンプレート構造を確認
+└── public/images/ を確認、必要な図がないか判断
 
 Phase 2: 判定
 ├── 新規質問か？ → 新規ページ作成フローへ
@@ -88,9 +88,9 @@ Phase 4: 検証
 
 | 出力                 | 形式          | 配置                            |
 | -------------------- | ------------- | ------------------------------- |
-| 記事 HTML            | UTF-8 LF      | `articles/<slug>.html`          |
-| 図解 SVG（任意）     | UTF-8 LF      | `images/<name>.svg`             |
-| index.html 更新      | UTF-8 LF      | `index.html`（スクリプト経由）  |
+| 記事 HTML            | UTF-8 LF      | `public/articles/<slug>.html`   |
+| 図解 SVG（任意）     | UTF-8 LF      | `public/images/<name>.svg`      |
+| index.html 更新      | UTF-8 LF      | `public/index.html`（スクリプト経由） |
 | ARTICLE_CLUSTER 更新 | Python ソース | `scripts/sync-article-dates.py` |
 
 ### 2.6 制約
@@ -129,7 +129,7 @@ SVG 仕様:
 - モバイル可読（大ラベル、シンプルな矢印、密なテキスト禁止）
 - `alt` テキスト必須
 - `figcaption` 推奨
-- 配置: `images/` 直下
+- 配置: `public/images/` 直下
 
 ---
 

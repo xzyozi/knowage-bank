@@ -6,10 +6,10 @@
 
 | 項目     | 値                                               |
 | -------- | ------------------------------------------------ |
-| 生成対象 | `index.html`（ルート直下）                       |
+| 生成対象 | `public/index.html`（public直下）                 |
 | 生成主体 | `scripts/sync-article-dates.py`                  |
-| 入力     | `articles/*.html` + Git ログ + スクリプト内定数  |
-| 副作用   | 各 `articles/*.html` の `<time datetime>` も更新 |
+| 入力     | `public/articles/*.html` + Git ログ + スクリプト内定数  |
+| 副作用   | 各 `public/articles/*.html` の `<time datetime>` も更新 |
 | 手編集   | 原則禁止（次回スクリプト実行で上書きされる）     |
 
 ## 2. index.html ページ構造
@@ -218,20 +218,20 @@ python3 scripts/sync-article-dates.py
 4. 新着リスト（上位6件）を生成
 5. クラスタごとに記事を分類・ソート
 6. index.html テンプレートに値を埋めて出力
-7. index.html をルートに書き出し
+7. public/index.html に書き出し
 ```
 
 ### 出力
 
-- `index.html`（上書き）
-- `articles/*.html`（`<time>` 要素のみ更新）
+- `public/index.html`（上書き）
+- `public/articles/*.html`（`<time>` 要素のみ更新）
 
 ### エラーハンドリング
 
 | 状況                                                | 挙動                                         |
 | --------------------------------------------------- | -------------------------------------------- |
 | ARTICLE_CLUSTER に記載があるが HTML が存在しない    | 警告を出してスキップ                         |
-| articles/ に HTML があるが ARTICLE_CLUSTER に未登録 | 警告を出して index に含めない                |
+| public/articles/ に HTML があるが ARTICLE_CLUSTER に未登録 | 警告を出して index に含めない                |
 | git コミット履歴がない                              | 警告。日付なしまたは今日日付でフォールバック |
 
 ## 11. 定数一覧
