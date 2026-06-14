@@ -33,9 +33,10 @@ async def main():
                 logger.info(f"検出ツール: {[t.name for t in tools]}")
                 
                 # 🟢 ツール実行
-                logger.info("Calling tool 'run_deep_research' with query 'テスト' (timeout=1800s)...")
+                logger.info("Calling tool 'run_deep_research' with specific query (timeout=1800s)...")
+                query = "MCP（Model Context Protocol）の概要と、主要なトランスポート（stdio, sse）の違いについて調査してください"
                 result = await asyncio.wait_for(
-                    session.call_tool("run_deep_research", arguments={"query": "テスト"}),
+                    session.call_tool("run_deep_research", arguments={"query": query}),
                     timeout=1800.0
                 )
                 logger.info(f"ツール実行結果: {result}")
