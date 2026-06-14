@@ -50,8 +50,8 @@ def get_creation_date(filepath: str) -> datetime:
         )
         lines = result.stdout.strip().splitlines()
         if lines and lines[0]:
-            # ISO 8601 形式のパース
-            return datetime.fromisoformat(lines[0])
+            # ISO 8601 形式のパース（比較用にタイムゾーン情報を除去）
+            return datetime.fromisoformat(lines[0]).replace(tzinfo=None)
     except Exception as e:
         logger.warning(f"Failed to get git log for {filepath}: {e}")
         
