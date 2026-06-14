@@ -19,70 +19,72 @@ class AbstractChatModel(ABC):
         """プロンプトに対して応答を生成します。"""
         pass
 
-class OpenAIModel(AbstractChatModel):
-    """OpenAI APIを使用するモデル"""
-    def __init__(self, api_key: str):
-        if not api_key.startswith("sk-"):
-            logger.warning("OpenAI API key does not seem to be valid.")
-        openai.api_key = api_key
+class OllamaModel(AbstractChatModel):
+    """OllamaをローカルAPI経由で使用するモデル"""
+    def __init__(self, model_name: str, base_url: str):
+        self.model_name = model_name
+        self.base_url = base_url
+        compat_url = base_url if "/v1" in base_url else f"{base_url.rstrip('/')}/v1"
+        self.client = openai.OpenAI(
+            base_url=compat_url,
+            api_key="ollama",  # Ollamaの場合はダミーキーで動作します
+        )
+        logger.info(f"Initialized OllamaModel with model '{model_name}' at {compat_url}")
 
     def get_response(self, prompt: str) -> str:
-        logger.debug(f"Sending prompt to OpenAI: {prompt}")
-        # ここに実際のAPI呼び出しを実装します (例: openai.ChatCompletion.create)
-        return f"Response from OpenAI for: '{prompt}'"
-
-class LocalModel(AbstractChatModel):
-    """ローカルモデルを使用するモデル"""
-    def __init__(self, model_path: str):
-        self.model_path = model_path
-        # ここにローカルモデルをロードする処理を実装します (例: HuggingFace Transformers)
-        logger.info(f"Loading local model from path: {model_path}")
-
-    def get_response(self, prompt: str) -> str:
-        logger.debug(f"Generating response from local model for: {prompt}")
-        return f"Response from Local Model for: '{prompt}'"
+        logger.debug(f"Sending prompt to Ollama ({self.model_name}): {prompt}")
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+            )
+            return completion.choices[0].message.content or ""
+        except Exception as e:
+            logger.error(f"Ollama API request failed: {e}")
+            raise e
 
 def _initialize_model() -> AbstractChatModel:
     """設定に基づいて適切なチャットモデルのインスタンスを返すファクトリ関数"""
-    if config.OPENAI_API_KEY:
-        logger.info("Using OpenAI model based on configuration.")
-        return OpenAIModel(api_key=config.OPENAI_API_KEY)
-    elif config.LOCAL_MODEL_PATH:
-        logger.info("Using local model based on configuration.")
-        return LocalModel(model_path=config.LOCAL_MODEL_PATH)
-    else:
-        raise ValueError(
-            "No LLM model configured. Please set either OPENAI_API_KEY or "
-            "LOCAL_MODEL_PATH in your .env file."
-        )
+    model_name = config.KNOWLEGE_BANK_MODEL
+    base_url = config.OLLAMA_BASE_URL
+    
+    # ollama/ プレフィックスがあれば除去
+    clean_model_name = model_name
+    if model_name.startswith("ollama/"):
+        clean_model_name = model_name[7:]
+        
+    logger.info(f"Using Ollama model based on configuration: {clean_model_name}")
+    return OllamaModel(model_name=clean_model_name, base_url=base_url)
 
 # アプリケーション起動時にモデルを一度だけ初期化し、シングルトンとして提供
 chat_model_instance: AbstractChatModel = _initialize_model()
 
 class ChatModel:
     def __init__(self,
-                 model_name: str,
+                 model_name: Optional[str] = None,
                  api_key: Optional[str] = None,
                  base_url: Optional[str] = None,
                  site_url: str = "",
                  site_name: str = ""
                  ) -> None:
-        self.model_name = model_name
+        raw_model = model_name or config.KNOWLEGE_BANK_MODEL
+        
+        # ollama/ プレフィックスのハンドリング
+        self.model_name = raw_model
+        if raw_model.startswith("ollama/"):
+            self.model_name = raw_model[7:]
+            api_key = api_key or "ollama"
+            base_url = base_url or config.OLLAMA_BASE_URL
+        else:
+            api_key = api_key or "ollama"
+            base_url = base_url or config.OLLAMA_BASE_URL
 
-        # 引数として渡されない場合は .env (app.config) から自動取得
-        if not api_key:
-            if "llama" in model_name.lower() or "groq" in model_name.lower():
-                api_key = config.GROQ_API_KEY
-                base_url = base_url or config.GROQ_BASE_URL
-            else:
-                api_key = config.OPENAI_API_KEY
-                base_url = base_url or None # OpenAIの場合はデフォルトNone
-
-        if not api_key:
-            raise ValueError(f"API key for model '{model_name}' is not set. Please check your .env file.")
+        # OpenAI互換エンドポイントの補正
+        compat_url = base_url if "/v1" in base_url else f"{base_url.rstrip('/')}/v1"
 
         self.client = openai.OpenAI(
-            base_url=base_url,
+            base_url=compat_url,
             api_key=api_key,
         )
         self.extra_headers: Dict[str, str] = {}
