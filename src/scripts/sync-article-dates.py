@@ -297,12 +297,12 @@ def main():
             index_content = f.read()
             
         # 新着セクションの置換
-        recent_pattern = r"(<!-- BEGIN_RECENT_ARTICLES -->).*?(<!-- END_RECENT_ARTICLES -->)"
+        recent_pattern = r"(<!-- BEGIN_RECENT_ARTICLES.*?-->).*?(<!-- END_RECENT_ARTICLES.*?-->)"
         index_content = re.sub(recent_pattern, f"\\1\n{recent_html}\n\\2", index_content, flags=re.DOTALL)
         
         # 各ドメインの置換
         for dom, html in domain_html_dict.items():
-            pattern_str = f"(<!-- BEGIN_{dom.upper()}_CLUSTERS -->).*?(<!-- END_{dom.upper()}_CLUSTERS -->)"
+            pattern_str = f"(<!-- BEGIN_{dom.upper()}_CLUSTERS.*?-->).*?(<!-- END_{dom.upper()}_CLUSTERS.*?-->)"
             index_content = re.sub(pattern_str, f"\\1\n{html}\n\\2", index_content, flags=re.DOTALL)
             
         with open(index_path, "w", encoding="utf-8") as f:
