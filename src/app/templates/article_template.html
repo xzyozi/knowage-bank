@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} | 技術質問ノート</title>
+    <link rel="stylesheet" href="../styles/site.css">
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="../index.html">技術質問ノート</a>
+        </div>
+    </header>
+
+    <main class="page">
+        <article>
+            
+            <!-- ① ヒーローエリア -->
+            <header class="hero">
+                <p class="eyebrow">{{ eyebrow }}</p>
+                <h1>{{ title }}</h1>
+                <p class="article-created"><time datetime="{{ date_str }}">作成日: {{ display_date }}</time></p>
+                <p class="lead">{{ lead }}</p>
+            </header>
+
+            <!-- ② 簡潔なQ&Aセクション -->
+            <section class="qa" aria-labelledby="quick-answer">
+                <h2 id="quick-answer">簡潔なQ&amp;A</h2>
+                <dl>
+                    {% for item in qa %}
+                    <dt>Q. {{ item.q }}</dt>
+                    <dd>A. {{ item.a }}</dd>
+                    {% endfor %}
+                </dl>
+            </section>
+
+            <!-- ③ 本文セクション群 -->
+            {% for sec in sections %}
+            <h2>{{ sec.h2 }}</h2>
+            {% for para in sec.paragraphs %}
+            <p>{{ para }}</p>
+            {% endfor %}
+            
+            {% if sec.subsections %}
+            {% for sub in sec.subsections %}
+            <h3>{{ sub.h3 }}</h3>
+            {% for sub_para in sub.paragraphs %}
+            <p>{{ sub_para }}</p>
+            {% endfor %}
+            {% endfor %}
+            {% endif %}
+            {% endfor %}
+
+            <!-- ④ 要点セクション -->
+            <section class="note">
+                <h2>要点</h2>
+                <p>この記事の要点は以下の通りです。</p>
+                <ul>
+                    {% for pt in key_points %}
+                    <li>{{ pt }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+
+            <!-- ⑤ 参考資料セクション -->
+            <section class="related" aria-label="参考資料">
+                <h2>参考資料</h2>
+                <ul>
+                    {% for ref in references %}
+                    <li><a href="{{ ref.url }}" target="_blank">{{ ref.title }}</a></li>
+                    {% endfor %}
+                </ul>
+            </section>
+
+            <!-- ⑥ 関連ナビゲーション -->
+            <nav class="related" aria-label="関連リンク">
+                <p><a href="../index.html">インデックスへ戻る</a></p>
+            </nav>
+
+        </article>
+    </main>
+
+    <footer class="site-footer">
+        <p>技術質問ノート</p>
+    </footer>
+</body>
+
+</html>

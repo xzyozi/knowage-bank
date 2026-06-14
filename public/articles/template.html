@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- 【必須】記事タイトル | 技術質問ノート の形式で記述してください -->
+    <title>質問形式のタイトル | 技術質問ノート</title>
+    <!-- 【必須】共通スタイルシートへの相対パス（public/articles/配下からの相対パス） -->
+    <link rel="stylesheet" href="../styles/site.css">
+</head>
+
+<body>
+    <!-- 【必須】サイト共通ヘッダー（記事ページ用：カテゴリナビは含めません） -->
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="../index.html">技術質問ノート</a>
+        </div>
+    </header>
+
+    <!-- 【必須】メインコンテンツ領域 -->
+    <main class="page">
+        <article>
+            
+            <!-- ① ヒーローエリア【必須】 -->
+            <header class="hero">
+                <!-- 【必須】カテゴリ / サブカテゴリ（例: 開発 > バックエンド & API） -->
+                <p class="eyebrow">カテゴリ / サブカテゴリ</p>
+                <!-- 【必須】質問形式のタイトル（h1） -->
+                <h1>質問形式のタイトル？</h1>
+                <!-- 【必須】作成日表示（日付とdatetime属性は scripts/sync-article-dates.py の実行時に Git コミット日から自動更新されます） -->
+                <p class="article-created"><time datetime="2026-06-14">作成日: 2026年6月14日</time></p>
+                <!-- 【必須】記事全体の結論や概要を端的にまとめたリード文（1段落、最大3文程度） -->
+                <p class="lead">この記事では、〇〇についての概要と、その具体的な動作原理や特徴について解説します。</p>
+            </header>
+
+            <!-- ② 簡潔なQ&Aセクション【必須】 -->
+            <section class="qa" aria-labelledby="quick-answer">
+                <h2 id="quick-answer">簡潔なQ&amp;A</h2>
+                <dl>
+                    <!-- 質問と回答のペア（1〜6ペア程度。簡潔に常体で記述） -->
+                    <dt>Q. 〇〇とは何ですか？</dt>
+                    <dd>A. ××を解決するための、△△な仕組みのことです。</dd>
+                    
+                    <dt>Q. どのような特徴がありますか？</dt>
+                    <dd>A. 主に高速な処理、シンプルな構成、および強力な拡張性という特徴があります。</dd>
+                </dl>
+            </section>
+
+            <!-- ③ 図解セクション【任意】（必要に応じて使用してください） -->
+            <!--
+            <figure class="figure">
+                <img src="../images/sample-diagram.svg" alt="〇〇の動作プロセスの図解" width="600" height="400">
+                <figcaption>図1: 〇〇が処理を実行する際の流れ</figcaption>
+            </figure>
+            -->
+
+            <!-- ④ 本文セクション群【必須】（h2/h3の見出し階層を順に守って記述してください） -->
+            <h2>〇〇の基本的な仕組み</h2>
+            <p>ここに本文を記述します。段落ごとに <code>&lt;p&gt;</code> タグを使用し、コード片は <code>&lt;code&gt;</code> タグで囲みます。</p>
+            
+            <h3>主要な構成要素</h3>
+            <p>サブセクションが必要な場合は、h3見出しを使用します。</p>
+            <ul>
+                <li><strong>要素1:</strong> 説明テキスト</li>
+                <li><strong>要素2:</strong> 説明テキスト</li>
+            </ul>
+
+            <!-- ⑤ 要点セクション【必須】（記事全体のまとめ） -->
+            <section class="note">
+                <h2>要点</h2>
+                <p>この記事の要点は以下の通りです。</p>
+                <ul>
+                    <li>要点その1を簡潔に記述します。</li>
+                    <li>要点その2を簡潔に記述します。</li>
+                    <li>要点その3を簡潔に記述します。</li>
+                </ul>
+            </section>
+
+            <!-- ⑥ 参考資料セクション【必須】（一次情報リンクを最低1件以上記載してください） -->
+            <section class="related" aria-label="参考資料">
+                <h2>参考資料</h2>
+                <ul>
+                    <!-- リンク先は公式ドキュメントや仕様書などの一次情報のみとします。組織名/サイト名: ページタイトルの形式を推奨 -->
+                    <li><a href="https://example.com/docs">組織名/公式ドキュメント: ページタイトル</a></li>
+                </ul>
+            </section>
+
+            <!-- ⑦ 関連ナビゲーション【必須】 -->
+            <nav class="related" aria-label="関連リンク">
+                <!-- 関連記事のリンクがあれば 1〜3件程度追加（相対パス） -->
+                <!-- <p><a href="another-article.html">関連記事のタイトル</a></p> -->
+                
+                <!-- 【必須】インデックスへ戻るリンクを必ず末尾に含めます -->
+                <p><a href="../index.html">インデックスへ戻る</a></p>
+            </nav>
+
+        </article>
+    </main>
+
+    <!-- 【必須】サイト共通フッター -->
+    <footer class="site-footer">
+        <p>技術質問ノート</p>
+    </footer>
+</body>
+
+</html>

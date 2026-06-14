@@ -1,0 +1,72 @@
+{
+  "clusters": {
+    "dev-backend": {
+      "domain": "dev",
+      "eyebrow": "開発 > バックエンド & API",
+      "h3": "サーバー側フレームワークと API 設計"
+    },
+    "dev-frontend": {
+      "domain": "dev",
+      "eyebrow": "開発 > フロントエンド & 配信",
+      "h3": "画面、ルーティング、ホスティング、メディア出力"
+    },
+    "dev-toolchain": {
+      "domain": "dev",
+      "eyebrow": "開発 > 開発基盤",
+      "h3": "言語、ランタイム、パッケージ、リポジトリ、品質ツール"
+    },
+    "game-engine": {
+      "domain": "game",
+      "eyebrow": "ゲーム > エンジン",
+      "h3": "3D エンジンの比較と選定"
+    },
+    "ai-governance": {
+      "domain": "ai",
+      "eyebrow": "AI > 安全・運用",
+      "h3": "企業利用、リスク、ガバナンス"
+    },
+    "ai-articles-papers": {
+      "domain": "ai",
+      "eyebrow": "AI > 記事・論文",
+      "h3": "記事・論文の読み解き"
+    },
+    "ai-workflow": {
+      "domain": "ai",
+      "eyebrow": "AI > 開発ワークフロー",
+      "h3": "コーディング支援、ツール連携、作業の自動化"
+    },
+    "ai-app": {
+      "domain": "ai",
+      "eyebrow": "AI > アプリケーション設計",
+      "h3": "RAG、Agent、データと検索の設計"
+    },
+    "ai-foundation": {
+      "domain": "ai",
+      "eyebrow": "AI > 基礎",
+      "h3": "モデルの仕組みと論文"
+    },
+    "infra-cloud": {
+      "domain": "infra",
+      "eyebrow": "インフラ > クラウド（AWS）",
+      "h3": "VPC、データベース、可用性"
+    },
+    "infra-network": {
+      "domain": "infra",
+      "eyebrow": "インフラ > ネットワーク",
+      "h3": "接続とセキュリティ（クラウド外も含む）"
+    }
+  },
+  "cluster_order": [
+    "dev-backend",
+    "dev-frontend",
+    "dev-toolchain",
+    "game-engine",
+    "ai-governance",
+    "ai-articles-papers",
+    "ai-workflow",
+    "ai-app",
+    "ai-foundation",
+    "infra-cloud",
+    "infra-network"
+  ]
+}
