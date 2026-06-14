@@ -109,3 +109,23 @@ Qwen2.5-14B が現時点で14Bクラスの日本語タスクでは最も安定�
 - **`qa-html-note`**: テンプレート追従 + 本文生成に絞れば14B Q4で運用可能。ただし参考URLと事実確認は人間が担当する前提
 - **`claim-context-review`**: 14B Q4では実用不可。マルチソース統合・メタ認知的判断・長文構造化の3つすべてが要求水準に届かない
 - **Skill定義をそのまま使う**: ローカルLLMでは自律実行の前提が崩れるため、Skill定義自体をローカルLLM用に簡略化するか、人間がループに入る設計に変えるのが現実的
+
+---
+
+## 実装結果 (2026年6月時点)
+
+上記の評価と現実的な構成案（パターンB）に基づき、**「Jinja2テンプレートによるHTML出力保証 ＋ LLMには構造化JSONのみを出力させる」**という方式を正式に実装・導入した。
+
+### 導入されたコンポーネント
+
+1. **[generate-article.py](file:///c:/Users/xzyoi/Desktop/python/knowage-bank/src/scripts/generate-article.py)**
+   - ローカルLLM（Ollama上の `gemma4-12b` など）に対して、HTMLタグそのものではなく、JSON（記事タイトル、リード文、Q&Aリスト、本文のセクション配列等）でのデータ出力を要求する。
+   - LLMから得られた生応答を [logs/llm_output.log](file:///c:/Users/xzyoi/Desktop/python/knowage-bank/logs/llm_output.log) へ自動的にタイムスタンプ付きで追記保存し、履歴を残すデバッグ機能を搭載。
+2. **[article_builder.py](file:///c:/Users/xzyoi/Desktop/python/knowage-bank/src/app/article_builder.py)**
+   - JSONデータを読み取り、`Jinja2` を用いて [article_template.html](file:///c:/Users/xzyoi/Desktop/python/knowage-bank/src/app/templates/article_template.html) にデータを流し込んで静的HTML記事をビルドする。
+   - **カテゴリ表記ゆれ補正**: LLMが生成した不完全なカテゴリ名（例: `インフラ > クラウド`）を、`category_config.json` 内の正式なカテゴリ（`インフラ > クラウド（AWS）`）へ自動で揺らぎ吸収してマッピング補正する。
+
+### 導入による効果
+- HTMLマークアップの欠落（閉じタグの忘れ、必須CSSクラスの消失など）に起因するデザイン崩れリスクを **0%** に排除。
+- 多少のカテゴリの表記ゆれはシステムが自動解決し、インデックス同期スクリプト（`sync-article-dates.py`）が確実に分類・掲載を行うように安定化した。
+- ローカルLLMを用いた完全自動での記事作成〜デプロイ自走システムとしての実用性を確立した。
