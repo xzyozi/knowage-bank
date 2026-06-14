@@ -13,105 +13,24 @@ from app.utils.logger import logger
 # ==========================================
 RECENT_LIMIT = 6
 
-CLUSTERS = {
-    "dev-backend": {
-        "domain": "dev",
-        "eyebrow": "開発 > バックエンド & API",
-        "h3": "サーバー側フレームワークと API 設計"
-    },
-    "dev-frontend": {
-        "domain": "dev",
-        "eyebrow": "開発 > フロントエンド & 配信",
-        "h3": "画面、ルーティング、ホスティング、メディア出力"
-    },
-    "dev-toolchain": {
-        "domain": "dev",
-        "eyebrow": "開発 > 開発基盤",
-        "h3": "言語、ランタイム、パッケージ、リポジトリ、品質ツール"
-    },
-    "game-engine": {
-        "domain": "game",
-        "eyebrow": "ゲーム > エンジン",
-        "h3": "3D エンジンの比較と選定"
-    },
-    "ai-governance": {
-        "domain": "ai",
-        "eyebrow": "AI > 安全・運用",
-        "h3": "企業利用、リスク、ガバナンス"
-    },
-    "ai-articles-papers": {
-        "domain": "ai",
-        "eyebrow": "AI > 記事・論文",
-        "h3": "記事・論文の読み解き"
-    },
-    "ai-workflow": {
-        "domain": "ai",
-        "eyebrow": "AI > 開発ワークフロー",
-        "h3": "コーディング支援、ツール連携、作業の自動化"
-    },
-    "ai-app": {
-        "domain": "ai",
-        "eyebrow": "AI > アプリケーション設計",
-        "h3": "RAG、Agent、データと検索の設計"
-    },
-    "ai-foundation": {
-        "domain": "ai",
-        "eyebrow": "AI > 基礎",
-        "h3": "モデルの仕組みと論文"
-    },
-    "infra-cloud": {
-        "domain": "infra",
-        "eyebrow": "インフラ > クラウド（AWS）",
-        "h3": "VPC、データベース、可用性"
-    },
-    "infra-network": {
-        "domain": "infra",
-        "eyebrow": "インフラ > ネットワーク",
-        "h3": "接続とセキュリティ（クラウド外も含む）"
-    }
-}
+import json
 
-CLUSTER_ORDER = [
-    # dev
-    "dev-backend", "dev-frontend", "dev-toolchain",
-    # game
-    "game-engine",
-    # ai
-    "ai-governance", "ai-articles-papers", "ai-workflow", "ai-app", "ai-foundation",
-    # infra
-    "infra-cloud", "infra-network"
-]
+# ==========================================
+# 定数・設定の動的ロード
+# ==========================================
+config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "category_config.json")
+if not os.path.exists(config_path):
+    config_path = "config/category_config.json"
 
-ARTICLE_CLUSTER = {
-    "go-backend-api-frameworks.html": "dev-backend",
-    "nestjs.html": "dev-backend",
-    "hono.html": "dev-backend",
-    "react-router-vs-tanstack-router.html": "dev-frontend",
-    "spa-ssg-ssr.html": "dev-frontend",
-    "use-action-state.html": "dev-frontend",
-    "react-19-changes.html": "dev-frontend",
-    "remotion-rendering.html": "dev-frontend",
-    "package-managers.html": "dev-toolchain",
-    "nodejs-versions.html": "dev-toolchain",
-    "temporal-api.html": "dev-toolchain",
-    "typescript-5-6-7.html": "dev-toolchain",
-    "typescript-lint-format-tooling.html": "dev-toolchain",
-    "turborepo-monorepo.html": "dev-toolchain",
-    "3d-game-engines.html": "game-engine",
-    "gemma-on-premise-web-app.html": "ai-governance",
-    "chatgpt-enterprise-risk.html": "ai-governance",
-    "torvalds-ai-programming-productivity.html": "ai-articles-papers",
-    "rtk-ai-token-proxy.html": "ai-workflow",
-    "mcp-server.html": "ai-workflow",
-    "claude-code-dynamic-workflows.html": "ai-workflow",
-    "rag.html": "ai-app",
-    "ai-agent.html": "ai-app",
-    "ai-friendly-relational-database.html": "ai-app",
-    "transformer-paper.html": "ai-foundation",
-    "aws-web-db-network.html": "infra-cloud",
-    "aws-database-operations.html": "infra-cloud",
-    "wifi-security.html": "infra-network",
-}
+try:
+    with open(config_path, "r", encoding="utf-8") as f:
+        config_data = json.load(f)
+    CLUSTERS = config_data.get("clusters", {})
+    CLUSTER_ORDER = config_data.get("cluster_order", [])
+except Exception as e:
+    logger.error(f"Failed to load category config: {e}")
+    CLUSTERS = {}
+    CLUSTER_ORDER = []
 
 
 # ==========================================
@@ -222,16 +141,34 @@ def update_article_date(filepath: str, date: datetime):
 def main():
     logger.info("Starting article date synchronization and index generation...")
     
-    # 記事ごとのデータを格納するリスト
     articles = []
-    
-    # 1. 各ファイルの更新とデータ取得
-    for filename, cluster_id in ARTICLE_CLUSTER.items():
-        filepath = os.path.join("public", "articles", filename)
-        if not os.path.exists(filepath):
-            logger.warning(f"File not found: {filepath}. Skipping.")
-            continue
-            
+    articles_dir = os.path.join("public", "articles")
+    if not os.path.exists(articles_dir):
+        logger.error(f"Articles directory not found at {articles_dir}")
+        return
+
+    # HTMLファイル名のリストを自動スキャン (template.htmlは除外)
+    html_files = [f for f in os.listdir(articles_dir) if f.endswith(".html") and f != "template.html"]
+
+    # eyebrow（タグ名）からクラスタIDを逆引きするためのマップを作成
+    # HTMLエンティティの表記ブレ（&amp; や &gt; など）に対応するため、アンエスケープして正規化
+    import html
+    eyebrow_to_cluster = {}
+    for cl_id, cl_info in CLUSTERS.items():
+        raw_eyebrow = cl_info.get("eyebrow", "")
+        # 通常テキスト表記
+        eyebrow_to_cluster[raw_eyebrow] = cl_id
+        # HTMLエンティティ表記
+        escaped_eyebrow = html.escape(raw_eyebrow)
+        eyebrow_to_cluster[escaped_eyebrow] = cl_id
+        # 空白ゆらぎの考慮
+        eyebrow_to_cluster[raw_eyebrow.replace(" ", "")] = cl_id
+        eyebrow_to_cluster[escaped_eyebrow.replace(" ", "")] = cl_id
+
+    # 各ファイルの更新とデータ取得
+    for filename in html_files:
+        filepath = os.path.join(articles_dir, filename)
+        
         # 作成日の取得
         date = get_creation_date(filepath)
         
@@ -241,6 +178,16 @@ def main():
         # メタデータの抽出
         meta = parse_html_metadata(filepath)
         
+        # HTMLのeyebrow（タグ名）からクラスタIDを自動判定
+        raw_html_eyebrow = meta.get("eyebrow", "")
+        html_eyebrow_key = raw_html_eyebrow.replace(" ", "")
+        
+        cluster_id = eyebrow_to_cluster.get(raw_html_eyebrow, eyebrow_to_cluster.get(html_eyebrow_key, None))
+        
+        if not cluster_id:
+            logger.warning(f"File '{filename}' has eyebrow '{raw_html_eyebrow}' which does not match any registered cluster in category_config.json. Skipping.")
+            continue
+            
         articles.append({
             "filename": filename,
             "slug": os.path.splitext(filename)[0],
@@ -248,13 +195,6 @@ def main():
             "cluster_id": cluster_id,
             **meta
         })
-
-    # 警告：ARTICLE_CLUSTER に未登録だが実際にファイルがあるもの
-    actual_dir = os.path.join("public", "articles")
-    if os.path.exists(actual_dir):
-        for f in os.listdir(actual_dir):
-            if f.endswith(".html") and f != "template.html" and f not in ARTICLE_CLUSTER:
-                logger.warning(f"File '{f}' is not registered in ARTICLE_CLUSTER.")
 
     # 2. 新着記事のHTML生成
     # 作成日降順でソート

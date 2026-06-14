@@ -37,7 +37,7 @@ description: >
 Phase 1: 調査
 ├── public/index.html を読み込み、既存記事一覧を把握
 ├── docs/homepage.md を読み、レイアウトルールを確認
-├── scripts/sync-article-dates.py を読み、ARTICLE_CLUSTER を確認
+├── config/category_config.json を読み、カテゴリ定義を確認
 ├── public/styles/site.css を読み、使用可能なクラスを確認
 ├── 関連する public/articles/*.html を読み、テンプレート構造を確認
 └── public/images/ を確認、必要な図がないか判断
@@ -57,7 +57,7 @@ Phase 3A: 新規ページ作成
 │   ├── 要点（section.note）
 │   ├── 参考資料（一次情報リンク必須）
 │   └── 関連ナビゲーション
-├── ARTICLE_CLUSTER に登録
+├── 記事HTMLの eyebrow に正しいカテゴリを設定
 └── sync-article-dates.py を実行
 
 Phase 3B: 既存ページ更新
@@ -91,7 +91,7 @@ Phase 4: 検証
 | 記事 HTML            | UTF-8 LF      | `public/articles/<slug>.html`   |
 | 図解 SVG（任意）     | UTF-8 LF      | `public/images/<name>.svg`      |
 | index.html 更新      | UTF-8 LF      | `public/index.html`（スクリプト経由） |
-| ARTICLE_CLUSTER 更新 | Python ソース | `scripts/sync-article-dates.py` |
+| 新規カテゴリ定義（必要時のみ）| JSON          | `config/category_config.json`   |
 
 ### 2.6 制約
 
@@ -303,7 +303,7 @@ qa-html-note の記事構造に変換
         ├── Q&A: 「この主張は正確か？」→ 短い結論
         ├── 本文: 主張マップ → 反応 → ノイズ → 総評
         ├── 参考資料: 使用ソース全て
-        └── ARTICLE_CLUSTER に登録 → sync 実行
+        └── 記事HTMLの eyebrow に正しいカテゴリを設定 ➔ sync 実行
 ```
 
 ### 連携時のクラスタ割り当て
@@ -337,5 +337,5 @@ qa-html-note の記事構造に変換
 | 一次情報が見つからない                     | 制限を明記し、記事のフレーミングのみで分析       |
 | 既存記事の特定に失敗                       | ユーザーに確認（「どの記事を指していますか？」） |
 | 参考となる一次情報がゼロ                   | 記事作成を拒否し理由を説明                       |
-| ARTICLE_CLUSTER に登録すべきクラスタが不明 | ユーザーに選択肢を提示                           |
+| 登録すべきクラスタが `category_config.json` に未定義 | ユーザーに選択肢を提示、または JSON に追記       |
 | sync スクリプトが未実装                    | 手動で index を更新するか、スクリプト実装を提案  |

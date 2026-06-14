@@ -65,18 +65,17 @@
 
 ## 記事を追加するときの手順
 
-1. `public/articles/<slug>.html` を追加（既存記事と同じ HTML 構成）
-2. `scripts/sync-article-dates.py` の **`ARTICLE_CLUSTER`** に `ファイル名 → クラスタ ID` を登録
-3. 必要なら **`CLUSTERS` / `CLUSTER_ORDER`** を更新（新サブカテゴリのとき）
-4. リポジトリルートで実行:
+1. `public/articles/<slug>.html` を追加（既存記事と同じ HTML 構成。タグ `<p class="eyebrow">` に登録したいカテゴリ名を正しく記述）
+2. 必要なら `config/category_config.json` の `clusters` / `cluster_order` を更新（新しいサブカテゴリを定義するときのみ）
+3. リポジトリルートで実行:
 
 ```bash
-python3 scripts/sync-article-dates.py
+python3 src/scripts/sync-article-dates.py
 ```
 
-5. `public/index.html` と全記事の作成日が更新されることを確認
+4. `public/index.html` と全記事の作成日が更新されることを確認
 
-`public/index.html` を手で直した場合、次回スクリプト実行で上書きされます。カードの文言を変えたいときは、一度 index に反映した内容が `parse_index_cards()` で読み取れる状態にしてからスクリプトを回すか、スクリプト側のデータ定義を拡張してください。
+`public/index.html` を手で直した場合、次回スクリプト実行で上書きされます。カードの文言や内容を変えたいときは、各記事 HTML の `h1` や `.lead` を編集してスクリプトを再実行してください。
 
 ## 変更してはいけないこと（運用上）
 
@@ -87,3 +86,4 @@ python3 scripts/sync-article-dates.py
 ## 定数の変更
 
 新着件数はスクリプト先頭付近の **`RECENT_LIMIT`**（現在 **6**）。変更後は必ず `sync-article-dates.py` を再実行してください。
+カテゴリ定義や並び順の変更は、`config/category_config.json` を編集してください。
