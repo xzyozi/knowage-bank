@@ -23,11 +23,67 @@
     </header>
 
     <main class="page">
+        <!-- ヒーローセクション -->
         <section class="hero home-hero">
             <p class="eyebrow">知識整理</p>
             <h1>技術的な疑問を、読み返せる形で残す</h1>
             <p class="lead">質問への回答を <code>public/articles/</code> に蓄積し、このページでは内容別に探せるようにしています。各カードの日付は記事の追加日（git
                 初回コミット）で、新しい順に並べています。</p>
+        </section>
+
+        <!-- 分類マップ (アンカーリンクカード) -->
+        <nav class="section-map" aria-label="セクションマップ">
+            <a class="section-map-card" href="#recent">新着ノート</a>
+            <a class="section-map-card" href="#dev">開発</a>
+            <a class="section-map-card" href="#game">ゲーム</a>
+            <a class="section-map-card" href="#ai">AI</a>
+            <a class="section-map-card" href="#infra">インフラ</a>
+        </nav>
+
+        <!-- 新着記事エリア (グリッドレイアウト) -->
+        <section id="recent" class="recent-section">
+            <h2>新着ノート</h2>
+            <div class="recent-grid">
+                <!-- BEGIN_RECENT_ARTICLES (ここがスクリプトにより自動生成されます) -->
+                <p class="empty-note">新着記事はまだありません。</p>
+                <!-- END_RECENT_ARTICLES -->
+            </div>
+        </section>
+
+        <!-- 開発ドメインセクション -->
+        <section id="dev" class="domain-section">
+            <p class="eyebrow">開発</p>
+            <h2>ソフトウェアを作る・配布する・支える</h2>
+            <!-- BEGIN_DEV_CLUSTERS (ここがスクリプトにより自動生成されます) -->
+            <p class="empty-note">記事はまだありません。</p>
+            <!-- END_DEV_CLUSTERS -->
+        </section>
+
+        <!-- ゲームドメインセクション -->
+        <section id="game" class="domain-section">
+            <p class="eyebrow">ゲーム</p>
+            <h2>ゲーム制作の環境選び</h2>
+            <!-- BEGIN_GAME_CLUSTERS (ここがスクリプトにより自動生成されます) -->
+            <p class="empty-note">記事はまだありません。</p>
+            <!-- END_GAME_CLUSTERS -->
+        </section>
+
+        <!-- AIドメインセクション -->
+        <section id="ai" class="domain-section">
+            <p class="eyebrow">AI</p>
+            <h2>AI を使う・作る・理解する・守る</h2>
+            <!-- BEGIN_AI_CLUSTERS (ここがスクリプトにより自動生成されます) -->
+            <p class="empty-note">記事はまだありません。</p>
+            <!-- END_AI_CLUSTERS -->
+        </section>
+
+        <!-- インフラドメインセクション -->
+        <section id="infra" class="domain-section">
+            <p class="eyebrow">インフラ</p>
+            <h2>クラウドとネットワーク</h2>
+            <!-- BEGIN_INFRA_CLUSTERS (ここがスクリプトにより自動生成されます) -->
+            <p class="empty-note">記事はまだありません。</p>
+            <!-- END_INFRA_CLUSTERS -->
         </section>
 
     </main>
