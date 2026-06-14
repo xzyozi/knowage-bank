@@ -39,7 +39,7 @@
 
 ## 4. クラスタ（サブカテゴリ）定義
 
-スクリプト内 `CLUSTERS` 辞書で管理する。
+外部設定ファイル `config/category_config.json` で管理する。
 
 | クラスタID           | ドメイン | eyebrow パス                 | h3 見出し                                            |
 | -------------------- | -------- | ---------------------------- | ---------------------------------------------------- |
@@ -55,42 +55,13 @@
 | `infra-cloud`        | infra    | インフラ > クラウド（AWS）   | VPC、データベース、可用性                            |
 | `infra-network`      | infra    | インフラ > ネットワーク      | 接続とセキュリティ（クラウド外も含む）               |
 
-## 5. 記事→クラスタ マッピング（ARTICLE_CLUSTER）
+## 5. 記事→クラスタ マッピング（自動判定）
 
-スクリプト内の辞書。キー = ファイル名（拡張子込み）、値 = クラスタ ID。
+静的な対照表は廃止され、各記事 HTML の `<p class="eyebrow">` に記述されているカテゴリ名（タグ名）と、上記クラスタ定義の `eyebrow` とをスクリプト実行時に自動一致判定してクラスタIDを動的解決します。
 
-```python
-ARTICLE_CLUSTER = {
-    "go-backend-api-frameworks.html": "dev-backend",
-    "nestjs.html": "dev-backend",
-    "hono.html": "dev-backend",
-    "react-router-vs-tanstack-router.html": "dev-frontend",
-    "spa-ssg-ssr.html": "dev-frontend",
-    "use-action-state.html": "dev-frontend",
-    "react-19-changes.html": "dev-frontend",
-    "remotion-rendering.html": "dev-frontend",
-    "package-managers.html": "dev-toolchain",
-    "nodejs-versions.html": "dev-toolchain",
-    "temporal-api.html": "dev-toolchain",
-    "typescript-5-6-7.html": "dev-toolchain",
-    "typescript-lint-format-tooling.html": "dev-toolchain",
-    "turborepo-monorepo.html": "dev-toolchain",
-    "3d-game-engines.html": "game-engine",
-    "gemma-on-premise-web-app.html": "ai-governance",
-    "chatgpt-enterprise-risk.html": "ai-governance",
-    "torvalds-ai-programming-productivity.html": "ai-articles-papers",
-    "rtk-ai-token-proxy.html": "ai-workflow",
-    "mcp-server.html": "ai-workflow",
-    "claude-code-dynamic-workflows.html": "ai-workflow",
-    "rag.html": "ai-app",
-    "ai-agent.html": "ai-app",
-    "ai-friendly-relational-database.html": "ai-app",
-    "transformer-paper.html": "ai-foundation",
-    "aws-web-db-network.html": "infra-cloud",
-    "aws-database-operations.html": "infra-cloud",
-    "wifi-security.html": "infra-network",
-}
-```
+- 例: `go-backend-api-frameworks.html` 内に `<p class="eyebrow">開発 > バックエンド & API</p>` がある場合 ➔ 自動的に `dev-backend` クラスタへマッピングされます。
+- HTMLエンティティのエスケープ表記（`&gt;`, `&amp;`）や空白の有無の揺らぎについても自動的に補正されます。
+
 
 ## 6. 並び順アルゴリズム
 
@@ -230,8 +201,7 @@ python3 scripts/sync-article-dates.py
 
 | 状況                                                | 挙動                                         |
 | --------------------------------------------------- | -------------------------------------------- |
-| ARTICLE_CLUSTER に記載があるが HTML が存在しない    | 警告を出してスキップ                         |
-| public/articles/ に HTML があるが ARTICLE_CLUSTER に未登録 | 警告を出して index に含めない                |
+| HTML 内の eyebrow が `category_config.json` に未定義 | 警告を出してスキップ                         |
 | git コミット履歴がない                              | 警告。日付なしまたは今日日付でフォールバック |
 
 ## 11. 定数一覧
@@ -239,9 +209,8 @@ python3 scripts/sync-article-dates.py
 | 定数名            | デフォルト値 | 説明                                                       |
 | ----------------- | ------------ | ---------------------------------------------------------- |
 | `RECENT_LIMIT`    | `6`          | 新着セクションに表示する件数                               |
-| `CLUSTERS`        | 辞書         | クラスタIDとメタ情報                                       |
-| `CLUSTER_ORDER`   | リスト       | ドメイン内のクラスタ表示順（動的ソート前のフォールバック） |
-| `ARTICLE_CLUSTER` | 辞書         | ファイル名→クラスタID                                      |
+| `CLUSTERS`        | 辞書 (JSON)  | クラスタIDとメタ情報                                       |
+| `CLUSTER_ORDER`   | リスト (JSON)| ドメイン内のクラスタ表示順（動的ソート前のフォールバック） |
 
 ## 12. index.html の静的部分
 
@@ -265,6 +234,6 @@ python3 scripts/sync-article-dates.py
 ## 14. 運用上の注意
 
 - `index.html` と記事の日付が不一致な場合はスクリプト再実行で解消する
-- 新しいクラスタを追加する場合は `CLUSTERS` と `CLUSTER_ORDER` の両方を更新する
+- 新しいクラスタを追加する場合は `config/category_config.json` の `clusters` と `cluster_order` の両方を更新する
 - ドメインを追加する場合はスクリプトのテンプレートにセクション HTML を追加する
 - スクリプトは冪等（何度実行しても同じ結果）であるべき

@@ -27,3 +27,8 @@ Thumbs.db
 
 # project
 .gemini
+
+# Python build
+*.egg-info/
+build/
+dist/
