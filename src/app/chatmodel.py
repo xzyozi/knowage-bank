@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import openai
 
 from app import config
-from app.util import logger
+from app.utils import logger  # app.util -> app.utils に合わせてインポートパスを調整
 
 
 class AbstractChatModel(ABC):
@@ -92,7 +92,8 @@ class ChatModel:
         self.extra_body: Dict[str, Any] = {}
 
         # システムプロンプト（外部ファイルからロード、失敗時はフォールバック）
-        prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "system_prompt.txt")
+        # src/app/chatmodel.py から 2階層上がリポジトリルートとなり、そこから prompts/system_prompt.txt を参照
+        prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "prompts", "system_prompt.txt")
         if not os.path.exists(prompt_path):
             # ルートからの相対パス等、いくつかのフォールバックパスを試す
             prompt_path = "prompts/system_prompt.txt"
