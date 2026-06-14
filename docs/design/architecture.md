@@ -24,60 +24,77 @@
 ├── .gitignore                  # ホワイトリスト方式（html/css/md/svg/画像のみ許可）
 ├── .github/
 │   └── workflows/
-│       └── static.yml          # GitHub Pages デプロイワークフロー
-├── .codex/
-│   └── skills/                 # AI Skill 定義
-│       ├── claim-context-review/
-│       │   └── SKILL.md
-│       └── qa-html-note/
-│           └── SKILL.md
-├── articles/                   # 記事 HTML（1 ファイル = 1 質問）
-│   ├── <slug>.html
-│   └── ...
+│       └── deploy-pages.yml    # GitHub Pages デプロイワークフロー（Actions）
+├── config/
+│   └── category_config.json    # カテゴリ・クラスタ定義（メタデータ）
 ├── docs/                       # 運用・仕様ドキュメント
 │   ├── homepage.md             # ホーム画面レイアウト運用ルール
 │   ├── architecture.md         # 本ファイル
 │   ├── article-spec.md         # 記事 HTML 仕様
 │   ├── css-spec.md             # スタイルシート仕様
 │   ├── index-generation-spec.md # index.html 生成仕様
+│   ├── localLLM_info.md        # ローカルLLM情報
 │   └── skill-spec.md           # Skill 動作仕様
-├── images/                     # 図解（SVG）
-├── scripts/
-│   └── sync-article-dates.py   # 作成日同期・index 再生成（未実装）
-└── styles/
-    └── site.css                # 共通スタイルシート
+├── logs/
+│   └── llm_output.log          # ローカルLLMの生応答ログ
+├── public/                     # 公開静的ファイルディレクトリ
+│   ├── index.html              # ホーム画面エントリーポイント
+│   ├── articles/               # 記事 HTML（1 ファイル = 1 質問）
+│   │   ├── <slug>.html
+│   │   └── template.html       # 手動作成用HTMLテンプレート
+│   └── styles/
+│       └── site.css            # 共通スタイルシート
+├── src/                        # Pythonソースコード
+│   ├── app/
+│   │   ├── templates/
+│   │   │   └── article_template.html # 自動生成用Jinja2テンプレート
+│   │   ├── article_builder.py  # JSONデータからのHTMLビルド・カテゴリ正規化
+│   │   ├── chatmodel.py        # ローカルLLM (Ollama) 接続ラッパー
+│   │   └── config.py           # 環境変数・パス設定
+│   └── scripts/
+│       ├── generate-article.py # JSONベース技術記事自動生成スクリプト
+│       └── sync-article-dates.py # 記事作成日同期・index.html再生成
+└── pyproject.toml              # プロジェクト設定と依存関係（jinja2等含む）
 ```
 
 ## 3. データフロー
 
 ```
-[ユーザー] ── 質問 ──> [AI / 手動]
-                            │
-                            ▼
-               articles/<slug>.html を作成
-                            │
-                            ▼
-      scripts/sync-article-dates.py の ARTICLE_CLUSTER に登録
-                            │
-                            ▼
-         python3 scripts/sync-article-dates.py を実行
-                            │
-                ┌───────────┴───────────┐
-                ▼                       ▼
-     各記事の <time> を更新       index.html を再生成
-     （git 初回コミット日）      （新着6件 + カテゴリ別）
-                │                       │
-                └───────────┬───────────┘
-                            ▼
-                    git add & commit
-                            │
-                            ▼
-                  git push origin main
-                            │
-                            ▼
-          GitHub Actions (static.yml) が発火
-                            │
-                            ▼
+[ユーザー] ── 質問テーマ指定 ──> [src/scripts/generate-article.py]
+                                                   │
+                                                   ▼
+                                 [LocalLLM (Ollama Model)] ── (JSONで記事データ出力)
+                                                   │
+                                                   ▼
+                                    [src/app/article_builder.py]
+                                    ・カテゴリ名の正規化 (揺らぎ補正)
+                                    ・Jinja2で HTML を安全にレンダリング
+                                                   │
+                                                   ▼
+                           ┌───────────────────────┴───────────────────────┐
+                           ▼                                               ▼
+     articles/<slug>.html を生成・保存                   logs/llm_output.log に生応答を記録
+                           │
+                           ▼
+          [src/scripts/sync-article-dates.py] が自動実行
+                           │
+                           ▼
+          ┌────────────────┴────────────────┐
+          ▼                                 ▼
+    各記事の <time> を更新             public/index.html を再生成
+    （git 初回コミット日）            （新着6件 + カテゴリ別）
+          │                                 │
+          └────────────────┬────────────────┘
+                           ▼
+                   git add & commit
+                           │
+                           ▼
+                  git push origin test/* (または feat/*)
+                           │
+                           ▼
+          GitHub Actions (deploy-pages.yml) が発火
+                           │
+                           ▼
               GitHub Pages へデプロイ完了
 ```
 
@@ -103,22 +120,21 @@ images/*.svg
 
 ## 5. デプロイパイプライン仕様
 
-### ファイル: `.github/workflows/static.yml`
+### ファイル: `.github/workflows/deploy-pages.yml`
 
 | 項目                 | 値                                                  |
 | -------------------- | --------------------------------------------------- |
-| トリガー             | `push` to `main` / `workflow_dispatch`              |
+| トリガー             | `push` to `main`, `devlop`, `feat/*`, `test/*` / `workflow_dispatch` |
 | ランナー             | `ubuntu-latest`                                     |
 | パーミッション       | `contents: read`, `pages: write`, `id-token: write` |
 | 同時実行制御         | group `"pages"`, 進行中はキャンセルしない           |
-| アーティファクト対象 | リポジトリルート全体（`path: '.'`）                 |
+| アーティファクト対象 | `public` ディレクトリ（`path: './public'`）         |
 
 ### ステップ
 
 1. `actions/checkout@v4` — リポジトリチェックアウト
-2. `actions/configure-pages@v5` — Pages 設定
-3. `actions/upload-pages-artifact@v3` — 静的ファイルをアーティファクトに格納
-4. `actions/deploy-pages@v5` — GitHub Pages へデプロイ
+2. `actions/upload-pages-artifact@v3` — `public` 配下の静的ファイルをアーティファクトに格納
+3. `actions/deploy-pages@v4` — GitHub Pages へデプロイ
 
 ## 6. Git 管理ポリシー
 
