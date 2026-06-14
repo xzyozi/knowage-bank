@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 import openai
 
 from app import config
-from app.utils import logger  # app.util -> app.utils に合わせてインポートパスを調整
+from app.utils.logger import logger  # ロガーオブジェクトを直接インポート
 
 
 class AbstractChatModel(ABC):
