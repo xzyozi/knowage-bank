@@ -15,6 +15,9 @@ from app.issue_manager import IssueManager
 from app.chatmodel import ChatModel
 from app.article_builder import ArticleBuilder
 from app.utils.logger import logger
+from app import config
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 # 動的インポートでハイフン付きスクリプトを読み込む
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -86,9 +89,58 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
     try:
         model = ChatModel()
         
-        # 記事生成プロンプト（Issueのタイトルと本文をインプットとする）
+        # 1. LLMを用いてリサーチクエリを決定
+        query_prompt = f"以下のGitHub Issueの内容に基づいて、技術的な詳細をWeb検索・リサーチするためのクエリ文（日本語で1文程度、検索キーワードの羅列でも可）を生成してください。余計な前置きや説明は完全に省き、検索クエリ文そのもののみを出力してください。\n\n【Issueタイトル】\n{title}\n\n【Issue本文】\n{body}"
+        query_history = {
+            "messages": [
+                {"role": "system", "content": "あなたは与えられたIssueから最適な検索エンジン用のクエリ文を抽出するアシスタントです。"},
+                {"role": "user", "content": query_prompt}
+            ]
+        }
+        logger.info("Extracting research query using LLM...")
+        query_response = model.generate_response(query_history)
+        research_query = title
+        if query_response and query_response.content:
+            research_query = query_response.content.strip().strip('"').strip("'")
+            research_query = re.sub(r"\s+", " ", research_query)
+        logger.info(f"Generated research query: '{research_query}'")
+        
+        # 2. MCP連携によるDeep Research実行
+        research_text = ""
+        sse_url = config.DEEPRESEARCH_SSE_URL
+        logger.info("=== MCP Deep Research Step ===")
+        logger.info(f"Connecting to deepresearchMCP via SSE at {sse_url}...")
+        try:
+            async with sse_client(sse_url) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    logger.info("Calling tool 'run_deep_research' (timeout=1800s)...")
+                    result = await asyncio.wait_for(
+                        session.call_tool("run_deep_research", arguments={"query": research_query}),
+                        timeout=1800.0
+                    )
+                    logger.info("✅ Deep Research finished successfully.")
+                    if hasattr(result, "content"):
+                        contents = result.content
+                        text_parts = []
+                        for content in contents:
+                            if hasattr(content, "text"):
+                                text_parts.append(content.text)
+                            elif isinstance(content, dict) and "text" in content:
+                                text_parts.append(content["text"])
+                        research_text = "\n".join(text_parts)
+                    else:
+                        research_text = str(result)
+        except Exception as mcp_err:
+            logger.warning(f"⚠️ Deep Research execution failed, falling back to Issue text only. Error: {mcp_err}")
+            research_text = f"Title: {title}\nBody: {body}"
+        
+        # 3. リサーチ結果を元にした記事生成プロンプトの作成
         prompt = f"""
-以下のGitHub Issueの内容に基づいて、技術質問ノートに掲載するための構造化JSONデータを生成してください。
+以下のリサーチ結果およびGitHub Issueの内容に基づいて、技術質問ノートに掲載するための構造化JSONデータを生成してください。
+
+【リサーチインプット】
+{research_text}
 
 【Issueのタイトル】
 {title}

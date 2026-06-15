@@ -35,25 +35,59 @@ def test_sanitize_filename():
     # MA-FN-05: フォールバック：短すぎる
     assert sanitize_filename("a", 14) == "issue-14.html"
 
+def setup_mcp_mock(mock_sse, mock_session):
+    session_instance = MagicMock()
+    async def mock_initialize():
+        return None
+    session_instance.initialize = mock_initialize
+    
+    mock_result = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = "Deep Research Mock Results"
+    mock_result.content = [mock_content]
+    
+    async def mock_call_tool(*args, **kwargs):
+        return mock_result
+    session_instance.call_tool = mock_call_tool
+    
+    class AsyncCM:
+        async def __aenter__(self):
+            return session_instance
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+            
+    mock_session.return_value = AsyncCM()
+    
+    class SseCM:
+        async def __aenter__(self):
+            return (None, None)
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+    mock_sse.return_value = SseCM()
+
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_markdown_json(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+async def test_process_single_issue_success_markdown_json(
+    mock_sync, mock_builder_class, mock_model_class, mock_git_commit, mock_session, mock_sse
+):
     """MA-PR-01: LLMがマークダウンブロックで囲まれたJSONを返す正常系"""
-    # モックのセットアップ
+    setup_mcp_mock(mock_sse, mock_session)
     mock_git_commit.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
-    # マークダウンJSONのモック応答
+    # LLM応答: 1回目はクエリ、2回目はマークダウンJSON
+    mock_query_res = MagicMock(content="Test Query")
     mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_response = MagicMock()
-    mock_response.content = f"```json\n{mock_json_str}\n```"
-    mock_model.generate_response.return_value = mock_response
+    mock_article_res = MagicMock(content=f"```json\n{mock_json_str}\n```")
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     mock_builder = MagicMock()
     mock_builder_class.return_value = mock_builder
@@ -70,24 +104,29 @@ async def test_process_single_issue_success_markdown_json(mock_sync, mock_builde
     mock_builder.save_article.assert_called_once()
     mock_sync.main.assert_called_once()
 
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+async def test_process_single_issue_success_raw_json(
+    mock_sync, mock_builder_class, mock_model_class, mock_git_commit, mock_session, mock_sse
+):
     """MA-PR-02: LLMが直接生JSONを返す正常系"""
+    setup_mcp_mock(mock_sse, mock_session)
     mock_git_commit.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
-    # 生JSONのモック応答
+    # LLM応答: 1回目はクエリ、2回目は生JSON
+    mock_query_res = MagicMock(content="Test Query")
     mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_response = MagicMock()
-    mock_response.content = mock_json_str
-    mock_model.generate_response.return_value = mock_response
+    mock_article_res = MagicMock(content=mock_json_str)
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     mock_builder = MagicMock()
     mock_builder_class.return_value = mock_builder
@@ -99,19 +138,22 @@ async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_cla
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
 
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.ChatModel")
 @pytest.mark.asyncio
-async def test_process_single_issue_empty_llm_response(mock_model_class):
+async def test_process_single_issue_empty_llm_response(mock_model_class, mock_session, mock_sse):
     """MA-PR-03: LLMのレスポンスが空の場合に失敗(failed)ステータスになる異常系"""
+    setup_mcp_mock(mock_sse, mock_session)
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
-    # 空応答のモック
-    mock_response = MagicMock()
-    mock_response.content = ""
-    mock_model.generate_response.return_value = mock_response
+    # 2回目の生成結果が空
+    mock_query_res = MagicMock(content="Test Query")
+    mock_article_res = MagicMock(content="")
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
@@ -120,19 +162,22 @@ async def test_process_single_issue_empty_llm_response(mock_model_class):
     assert res is False
     mock_manager.update_issue_status.assert_any_call(99, "failed")
 
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.ChatModel")
 @pytest.mark.asyncio
-async def test_process_single_issue_invalid_json(mock_model_class):
+async def test_process_single_issue_invalid_json(mock_model_class, mock_session, mock_sse):
     """MA-PR-04: LLMが不正なJSONを返した場合に失敗(failed)ステータスになる異常系"""
+    setup_mcp_mock(mock_sse, mock_session)
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
-    # 不正なJSONテキスト
-    mock_response = MagicMock()
-    mock_response.content = "{this is not a valid json}"
-    mock_model.generate_response.return_value = mock_response
+    # 2回目の生成結果が不正JSON
+    mock_query_res = MagicMock(content="Test Query")
+    mock_article_res = MagicMock(content="{this is not a valid json}")
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
@@ -141,22 +186,27 @@ async def test_process_single_issue_invalid_json(mock_model_class):
     assert res is False
     mock_manager.update_issue_status.assert_any_call(99, "failed")
 
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+async def test_process_single_issue_no_push(
+    mock_sync, mock_builder_class, mock_model_class, mock_git_commit, mock_session, mock_sse
+):
     """git_commit_flag=False, git_push=False のときに git_commit が呼び出されないことを検証"""
+    setup_mcp_mock(mock_sse, mock_session)
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
+    mock_query_res = MagicMock(content="Test Query")
     mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_response = MagicMock()
-    mock_response.content = mock_json_str
-    mock_model.generate_response.return_value = mock_response
+    mock_article_res = MagicMock(content=mock_json_str)
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     mock_builder = MagicMock()
     mock_builder_class.return_value = mock_builder
@@ -170,23 +220,28 @@ async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_
     mock_git_commit.assert_not_called()
     mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
 
+@patch("sync_github_issues.sse_client")
+@patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_commit_only(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+async def test_process_single_issue_commit_only(
+    mock_sync, mock_builder_class, mock_model_class, mock_git_commit, mock_session, mock_sse
+):
     """git_commit_flag=True, git_push=False (コミットのみ) のときに git_commit(..., push=False) が呼び出されることを検証"""
+    setup_mcp_mock(mock_sse, mock_session)
     mock_git_commit.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
     
+    mock_query_res = MagicMock(content="Test Query")
     mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_response = MagicMock()
-    mock_response.content = mock_json_str
-    mock_model.generate_response.return_value = mock_response
+    mock_article_res = MagicMock(content=mock_json_str)
+    mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
     
     mock_builder = MagicMock()
     mock_builder_class.return_value = mock_builder
