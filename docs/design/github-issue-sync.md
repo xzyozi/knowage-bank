@@ -33,11 +33,13 @@
       ・"unprocessed" 状態の最も古いIssueを1件だけ選択
                  │
                  ▼
-     [STEP 5: 記事自動生成パイプラインの実行]
+     [STEP 5: 記事自動生成パイプラインの実行（MCP連携）]
       ・ステータスを "processing"（処理中）に変更
-      ・E2E記事生成スクリプトを実行（LLM / Deep Research連携）
+      ・LLMでIssueのタイトル/本文から「リサーチ用クエリ」を抽出・生成
+      ・MCP（SSE経由）で `deepresearchMCP` に接続し `run_deep_research` ツールを実行
+      ・取得したリサーチ結果をインプットとして最終的な記事HTMLをLLMで構造化生成
       ・成功時 ➔ ステータスを "processed"（処理完了）に更新
-      ・失敗時 ➔ ステータスを "failed" または "unprocessed" に戻す
+      ・失敗時 ➔ ステータスを "failed" に更新
                  │
                  ▼
      [STEP 6: 今回の処理日時の保存 (sinceの更新)]
@@ -115,5 +117,26 @@ GitHub上のIssueを書き換えないため、処理状況はローカルのJSO
 - 実行には `cron` または定期タスクランナー（Pythonスクリプトによるループ＋sleep、あるいはシステムタスクスケジュール）を用いる。
 
 ### 5.2 スロットリング制御 (1回につき1件のみ)
-`data/issue_status.json` 内を検索し、状態が `unprocessed` となっているIssueの中で、**最もIssue番号が若い（＝作成されたのが古い）**Issueを1件だけ処理対象とする。
+`data/issue_status.json` 内を検索し、状態が `unprocessed` となっているIssueの中で、**最もIssue番号が若い（＝作成されたのが古い）**Issueを1件だけ操作対象とする。
 これにより、複数のIssueが一度に届いた場合でも、APIやローカルリソースを枯渇させることなく、30分/1時間のサイクルごとに順番に処理を行う。
+
+---
+
+## 6. MCP Deep Research 連携の仕様
+
+### 6.1 環境変数
+MCPサーバーとのSSE接続には以下の環境変数を使用する。
+
+- **`KNOWAGE_BANK_DEEPRESEARCH_SSE_URL`**: Deep Research MCPサーバーが提供するSSE接続用エンドポイント（デフォルト: `http://localhost:8000/sse`）。
+
+### 6.2 実行プロセスと例外設計
+1. **リサーチクエリの抽出**: 
+   - LLM（ChatModel）を呼び出し、Issueの「タイトル」および「本文」からDeep Research用リサーチクエリ（検索エンジンに投げるための自然言語質問文）を生成する。
+2. **MCP連携 (run_deep_researchの呼び出し)**:
+   - `sse_client` で接続を確立し、`run_deep_research` ツールを実行。
+   - ネットワーク遮断やサーバー未起動などの理由でMCP接続に失敗、または処理タイムアウト（1800秒）が発生した場合は、リサーチ結果を空としてフォールバック処理を実行するか、もしくはエラーとしてステータスを `failed` にする。
+3. **最終記事の構造化JSON生成**:
+   - 得られたリサーチ結果テキストをコンテキストに含め、最終的なHTML構造化用JSONを生成。
+
+---
+
