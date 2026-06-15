@@ -74,7 +74,7 @@ def git_commit_and_push(filename: str, issue_num: int, title: str) -> bool:
         logger.error(f"Git command failed: {e}")
         return False
 
-async def process_single_issue(issue: dict, manager: IssueManager) -> bool:
+async def process_single_issue(issue: dict, manager: IssueManager, git_push: bool = False) -> bool:
     issue_num = issue["number"]
     title = issue["title"]
     body = issue.get("body", "")
@@ -176,10 +176,13 @@ async def process_single_issue(issue: dict, manager: IssueManager) -> bool:
         logger.info("Running sync-article-dates to update index.html...")
         sync_article_dates.main()
         
-        # 生成されたHTMLをGitに自動コミット＆プッシュ
-        logger.info("Running automatic Git commit and push...")
-        if not git_commit_and_push(filename, issue_num, title):
-            raise Exception("Git commit or push failed")
+        # 生成されたHTMLをGitに自動コミット＆プッシュ（オプション）
+        if git_push:
+            logger.info("Running automatic Git commit and push...")
+            if not git_commit_and_push(filename, issue_num, title):
+                raise Exception("Git commit or push failed")
+        else:
+            logger.info("Git push is disabled. Skipping git commit and push.")
 
         # ステータスを完了に更新
         manager.update_issue_status(issue_num, "processed", article_file=filename)
@@ -195,6 +198,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Sync GitHub Issues and generate articles.")
     parser.add_argument("--run-once", action="store_true", help="Run sync and process one issue, then exit.")
     parser.add_argument("--interval", type=int, default=1800, help="Polling interval in seconds (default: 1800s / 30m).")
+    parser.add_argument("--push", action="store_true", help="Automatically git commit and push after generating articles.")
     args = parser.parse_args()
 
     manager = IssueManager()
@@ -211,7 +215,7 @@ async def main():
         
         if next_issue:
             logger.info(f"Found unprocessed Issue #{next_issue['number']}. Processing...")
-            await process_single_issue(next_issue, manager)
+            await process_single_issue(next_issue, manager, git_push=args.push)
         else:
             logger.info("No unprocessed issues found in this cycle.")
             

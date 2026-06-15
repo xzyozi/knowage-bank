@@ -62,7 +62,7 @@ async def test_process_single_issue_success_markdown_json(mock_sync, mock_builde
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
     # 実行
-    res = await process_single_issue(issue, mock_manager)
+    res = await process_single_issue(issue, mock_manager, git_push=True)
     
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processing")
@@ -94,7 +94,7 @@ async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_cla
     
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
-    res = await process_single_issue(issue, mock_manager)
+    res = await process_single_issue(issue, mock_manager, git_push=True)
     
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
@@ -140,6 +140,35 @@ async def test_process_single_issue_invalid_json(mock_model_class):
     
     assert res is False
     mock_manager.update_issue_status.assert_any_call(99, "failed")
+
+@patch("sync_github_issues.git_commit_and_push")
+@patch("sync_github_issues.ChatModel")
+@patch("sync_github_issues.ArticleBuilder")
+@patch("sync_github_issues.sync_article_dates")
+@pytest.mark.asyncio
+async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
+    """git_push=False のときに git_commit_and_push が呼び出されないことを検証"""
+    mock_manager = MagicMock()
+    
+    mock_model = MagicMock()
+    mock_model_class.return_value = mock_model
+    
+    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
+    mock_response = MagicMock()
+    mock_response.content = mock_json_str
+    mock_model.generate_response.return_value = mock_response
+    
+    mock_builder = MagicMock()
+    mock_builder_class.return_value = mock_builder
+    
+    issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
+    
+    res = await process_single_issue(issue, mock_manager, git_push=False)
+    
+    assert res is True
+    # git_commit_and_push が呼び出されていないこと
+    mock_git_push.assert_not_called()
+    mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
 
 @patch("sync_github_issues.subprocess.run")
 def test_git_commit_and_push_success(mock_run):
