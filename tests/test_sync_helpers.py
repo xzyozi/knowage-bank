@@ -35,15 +35,15 @@ def test_sanitize_filename():
     # MA-FN-05: フォールバック：短すぎる
     assert sanitize_filename("a", 14) == "issue-14.html"
 
-@patch("sync_github_issues.git_commit_and_push")
+@patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_markdown_json(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
+async def test_process_single_issue_success_markdown_json(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
     """MA-PR-01: LLMがマークダウンブロックで囲まれたJSONを返す正常系"""
     # モックのセットアップ
-    mock_git_push.return_value = True
+    mock_git_commit.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
@@ -62,7 +62,7 @@ async def test_process_single_issue_success_markdown_json(mock_sync, mock_builde
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
     # 実行
-    res = await process_single_issue(issue, mock_manager, git_push=True)
+    res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=True)
     
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processing")
@@ -70,14 +70,14 @@ async def test_process_single_issue_success_markdown_json(mock_sync, mock_builde
     mock_builder.save_article.assert_called_once()
     mock_sync.main.assert_called_once()
 
-@patch("sync_github_issues.git_commit_and_push")
+@patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
+async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
     """MA-PR-02: LLMが直接生JSONを返す正常系"""
-    mock_git_push.return_value = True
+    mock_git_commit.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
@@ -94,7 +94,7 @@ async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_cla
     
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
-    res = await process_single_issue(issue, mock_manager, git_push=True)
+    res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=True)
     
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
@@ -141,13 +141,13 @@ async def test_process_single_issue_invalid_json(mock_model_class):
     assert res is False
     mock_manager.update_issue_status.assert_any_call(99, "failed")
 
-@patch("sync_github_issues.git_commit_and_push")
+@patch("sync_github_issues.git_commit")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
-    """git_push=False のときに git_commit_and_push が呼び出されないことを検証"""
+async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+    """git_commit_flag=False, git_push=False のときに git_commit が呼び出されないことを検証"""
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
@@ -163,56 +163,104 @@ async def test_process_single_issue_no_push(mock_sync, mock_builder_class, mock_
     
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
     
-    res = await process_single_issue(issue, mock_manager, git_push=False)
+    res = await process_single_issue(issue, mock_manager, git_commit_flag=False, git_push=False)
     
     assert res is True
-    # git_commit_and_push が呼び出されていないこと
-    mock_git_push.assert_not_called()
+    # git_commit が呼び出されていないこと
+    mock_git_commit.assert_not_called()
     mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
 
+@patch("sync_github_issues.git_commit")
+@patch("sync_github_issues.ChatModel")
+@patch("sync_github_issues.ArticleBuilder")
+@patch("sync_github_issues.sync_article_dates")
+@pytest.mark.asyncio
+async def test_process_single_issue_commit_only(mock_sync, mock_builder_class, mock_model_class, mock_git_commit):
+    """git_commit_flag=True, git_push=False (コミットのみ) のときに git_commit(..., push=False) が呼び出されることを検証"""
+    mock_git_commit.return_value = True
+    mock_manager = MagicMock()
+    
+    mock_model = MagicMock()
+    mock_model_class.return_value = mock_model
+    
+    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
+    mock_response = MagicMock()
+    mock_response.content = mock_json_str
+    mock_model.generate_response.return_value = mock_response
+    
+    mock_builder = MagicMock()
+    mock_builder_class.return_value = mock_builder
+    
+    issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
+    
+    res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=False)
+    
+    assert res is True
+    # git_commit が push=False で呼び出されていること
+    mock_git_commit.assert_called_once_with("issue-99-test-issue-title.html", 99, "Test Issue Title", push=False)
+
 @patch("sync_github_issues.subprocess.run")
-def test_git_commit_and_push_success(mock_run):
-    """git_commit_and_push: 正常系のテスト"""
-    # subprocess.runの戻り値をモック
-    # 1. branch_name取得用
+def test_git_commit_success_no_push(mock_run):
+    """git_commit: コマンド成功かつプッシュなしのテスト"""
     mock_branch_res = MagicMock()
     mock_branch_res.stdout = "test/issue-sync\n"
-    # 2. git diff用 (1を返すと変更あり、0だと変更なし)
+    
     mock_diff_res = MagicMock()
     mock_diff_res.return_value = MagicMock(returncode=1)
     
-    mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value, MagicMock(), MagicMock()]
+    # git pushなしのコマンド呼び出し
+    mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value, MagicMock()]
     
-    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    res = sync_github_issues.git_commit("issue-99.html", 99, "Test Title", push=False)
     assert res is True
     
-    # 呼び出し引数のアサート
+    # 呼び出し引数のアサート (git pushが含まれていないこと)
     mock_run.assert_any_call(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, check=True)
     mock_run.assert_any_call(["git", "add", "public/articles/issue-99.html", "public/index.html"], check=True)
     mock_run.assert_any_call(["git", "diff", "--cached", "--quiet"])
     mock_run.assert_any_call(["git", "commit", "-m", "feat: Issue #99 からの自動記事追加: Test Title"], check=True)
-    mock_run.assert_any_call(["git", "push", "origin", "test/issue-sync"], check=True)
+    
+    # git pushが呼び出されていないことを確認
+    for call in mock_run.call_args_list:
+        assert "push" not in call[0][0]
 
 @patch("sync_github_issues.subprocess.run")
-def test_git_commit_and_push_no_changes(mock_run):
-    """git_commit_and_push: 変更がないためスキップするケース"""
+def test_git_commit_success_with_push(mock_run):
+    """git_commit: コマンド成功かつプッシュありのテスト"""
     mock_branch_res = MagicMock()
     mock_branch_res.stdout = "test/issue-sync\n"
     
-    # returncode=0 (変更なし)
+    mock_diff_res = MagicMock()
+    mock_diff_res.return_value = MagicMock(returncode=1)
+    
+    # git pushありのコマンド呼び出し
+    mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value, MagicMock(), MagicMock()]
+    
+    res = sync_github_issues.git_commit("issue-99.html", 99, "Test Title", push=True)
+    assert res is True
+    
+    # 呼び出し引数のアサート (git pushが含まれていること)
+    mock_run.assert_any_call(["git", "push", "origin", "test/issue-sync"], check=True)
+
+@patch("sync_github_issues.subprocess.run")
+def test_git_commit_no_changes(mock_run):
+    """git_commit: 変更がないためスキップするケース"""
+    mock_branch_res = MagicMock()
+    mock_branch_res.stdout = "test/issue-sync\n"
+    
     mock_diff_res = MagicMock()
     mock_diff_res.return_value = MagicMock(returncode=0)
     
     mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value]
     
-    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    res = sync_github_issues.git_commit("issue-99.html", 99, "Test Title")
     assert res is True
 
 @patch("sync_github_issues.subprocess.run")
-def test_git_commit_and_push_failure(mock_run):
-    """git_commit_and_push: コマンド失敗時のテスト"""
+def test_git_commit_failure(mock_run):
+    """git_commit: コマンド失敗時のテスト"""
     mock_run.side_effect = subprocess.CalledProcessError(1, "git")
     
-    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    res = sync_github_issues.git_commit("issue-99.html", 99, "Test Title")
     assert res is False
 

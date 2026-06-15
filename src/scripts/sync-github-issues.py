@@ -41,8 +41,8 @@ def sanitize_filename(title: str, number: int) -> str:
     
     return f"issue-{number}-{cleaned[:30]}.html"
 
-def git_commit_and_push(filename: str, issue_num: int, title: str) -> bool:
-    """自動生成されたHTMLとインデックスの更新をコミット・プッシュする"""
+def git_commit(filename: str, issue_num: int, title: str, push: bool = False) -> bool:
+    """自動生成されたHTMLとインデックスの更新をコミットし、オプションでプッシュする"""
     try:
         # 現在のブランチ名を取得
         res_branch = subprocess.run(
@@ -57,7 +57,7 @@ def git_commit_and_push(filename: str, issue_num: int, title: str) -> bool:
         # 変更があるか確認 (コミットするものがない場合はスキップ)
         res_diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
         if res_diff.returncode == 0:
-            logger.info("No git changes to commit. Push skipped.")
+            logger.info("No git changes to commit. Git process skipped.")
             return True
             
         # コミット実行
@@ -66,15 +66,16 @@ def git_commit_and_push(filename: str, issue_num: int, title: str) -> bool:
         logger.info(f"Committed changes with message: '{commit_msg}'")
         
         # プッシュ実行
-        logger.info(f"Pushing changes to remote branch: {branch_name}...")
-        subprocess.run(["git", "push", "origin", branch_name], check=True)
-        logger.info("✅ Pushed successfully!")
+        if push:
+            logger.info(f"Pushing changes to remote branch: {branch_name}...")
+            subprocess.run(["git", "push", "origin", branch_name], check=True)
+            logger.info("✅ Pushed successfully!")
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"Git command failed: {e}")
         return False
 
-async def process_single_issue(issue: dict, manager: IssueManager, git_push: bool = False) -> bool:
+async def process_single_issue(issue: dict, manager: IssueManager, git_commit_flag: bool = False, git_push: bool = False) -> bool:
     issue_num = issue["number"]
     title = issue["title"]
     body = issue.get("body", "")
@@ -177,12 +178,12 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_push: boo
         sync_article_dates.main()
         
         # 生成されたHTMLをGitに自動コミット＆プッシュ（オプション）
-        if git_push:
-            logger.info("Running automatic Git commit and push...")
-            if not git_commit_and_push(filename, issue_num, title):
+        if git_commit_flag or git_push:
+            logger.info("Running automatic Git commit...")
+            if not git_commit(filename, issue_num, title, push=git_push):
                 raise Exception("Git commit or push failed")
         else:
-            logger.info("Git push is disabled. Skipping git commit and push.")
+            logger.info("Git automation is disabled. Skipping git commit.")
 
         # ステータスを完了に更新
         manager.update_issue_status(issue_num, "processed", article_file=filename)
@@ -198,6 +199,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Sync GitHub Issues and generate articles.")
     parser.add_argument("--run-once", action="store_true", help="Run sync and process one issue, then exit.")
     parser.add_argument("--interval", type=int, default=1800, help="Polling interval in seconds (default: 1800s / 30m).")
+    parser.add_argument("--commit", action="store_true", help="Automatically git add and commit after generating articles.")
     parser.add_argument("--push", action="store_true", help="Automatically git commit and push after generating articles.")
     args = parser.parse_args()
 
