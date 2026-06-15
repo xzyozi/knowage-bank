@@ -31,4 +31,8 @@ Thumbs.db
 # Python build
 *.egg-info/
 build/
-dist/
+dist/
+
+# Local databases and logs
+data/
+logs/
