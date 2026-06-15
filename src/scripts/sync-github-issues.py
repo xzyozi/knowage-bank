@@ -217,7 +217,7 @@ async def main():
         
         if next_issue:
             logger.info(f"Found unprocessed Issue #{next_issue['number']}. Processing...")
-            await process_single_issue(next_issue, manager, git_push=args.push)
+            await process_single_issue(next_issue, manager, git_commit_flag=args.commit, git_push=args.push)
         else:
             logger.info("No unprocessed issues found in this cycle.")
             
