@@ -6,6 +6,7 @@ import time
 import re
 import json
 from datetime import datetime
+import subprocess
 
 # src/ を module 検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -39,6 +40,39 @@ def sanitize_filename(title: str, number: int) -> str:
         return f"issue-{number}.html"
     
     return f"issue-{number}-{cleaned[:30]}.html"
+
+def git_commit_and_push(filename: str, issue_num: int, title: str) -> bool:
+    """自動生成されたHTMLとインデックスの更新をコミット・プッシュする"""
+    try:
+        # 現在のブランチ名を取得
+        res_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, check=True
+        )
+        branch_name = res_branch.stdout.strip()
+        
+        # ファイルのステージング
+        subprocess.run(["git", "add", f"public/articles/{filename}", "public/index.html"], check=True)
+        
+        # 変更があるか確認 (コミットするものがない場合はスキップ)
+        res_diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
+        if res_diff.returncode == 0:
+            logger.info("No git changes to commit. Push skipped.")
+            return True
+            
+        # コミット実行
+        commit_msg = f"feat: Issue #{issue_num} からの自動記事追加: {title}"
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True)
+        logger.info(f"Committed changes with message: '{commit_msg}'")
+        
+        # プッシュ実行
+        logger.info(f"Pushing changes to remote branch: {branch_name}...")
+        subprocess.run(["git", "push", "origin", branch_name], check=True)
+        logger.info("✅ Pushed successfully!")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Git command failed: {e}")
+        return False
 
 async def process_single_issue(issue: dict, manager: IssueManager) -> bool:
     issue_num = issue["number"]
@@ -142,6 +176,11 @@ async def process_single_issue(issue: dict, manager: IssueManager) -> bool:
         logger.info("Running sync-article-dates to update index.html...")
         sync_article_dates.main()
         
+        # 生成されたHTMLをGitに自動コミット＆プッシュ
+        logger.info("Running automatic Git commit and push...")
+        if not git_commit_and_push(filename, issue_num, title):
+            raise Exception("Git commit or push failed")
+
         # ステータスを完了に更新
         manager.update_issue_status(issue_num, "processed", article_file=filename)
         logger.info(f"✅ Successfully processed Issue #{issue_num}!")

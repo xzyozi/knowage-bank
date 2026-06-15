@@ -3,6 +3,7 @@ import os
 import sys
 import pytest
 import json
+import subprocess
 from unittest.mock import patch, MagicMock
 
 # scripts/sync-github-issues.py を動的インポート
@@ -34,13 +35,15 @@ def test_sanitize_filename():
     # MA-FN-05: フォールバック：短すぎる
     assert sanitize_filename("a", 14) == "issue-14.html"
 
+@patch("sync_github_issues.git_commit_and_push")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_markdown_json(mock_sync, mock_builder_class, mock_model_class):
+async def test_process_single_issue_success_markdown_json(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
     """MA-PR-01: LLMがマークダウンブロックで囲まれたJSONを返す正常系"""
     # モックのセットアップ
+    mock_git_push.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
@@ -67,12 +70,14 @@ async def test_process_single_issue_success_markdown_json(mock_sync, mock_builde
     mock_builder.save_article.assert_called_once()
     mock_sync.main.assert_called_once()
 
+@patch("sync_github_issues.git_commit_and_push")
 @patch("sync_github_issues.ChatModel")
 @patch("sync_github_issues.ArticleBuilder")
 @patch("sync_github_issues.sync_article_dates")
 @pytest.mark.asyncio
-async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_class, mock_model_class):
+async def test_process_single_issue_success_raw_json(mock_sync, mock_builder_class, mock_model_class, mock_git_push):
     """MA-PR-02: LLMが直接生JSONを返す正常系"""
+    mock_git_push.return_value = True
     mock_manager = MagicMock()
     
     mock_model = MagicMock()
@@ -135,3 +140,50 @@ async def test_process_single_issue_invalid_json(mock_model_class):
     
     assert res is False
     mock_manager.update_issue_status.assert_any_call(99, "failed")
+
+@patch("sync_github_issues.subprocess.run")
+def test_git_commit_and_push_success(mock_run):
+    """git_commit_and_push: 正常系のテスト"""
+    # subprocess.runの戻り値をモック
+    # 1. branch_name取得用
+    mock_branch_res = MagicMock()
+    mock_branch_res.stdout = "test/issue-sync\n"
+    # 2. git diff用 (1を返すと変更あり、0だと変更なし)
+    mock_diff_res = MagicMock()
+    mock_diff_res.return_value = MagicMock(returncode=1)
+    
+    mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value, MagicMock(), MagicMock()]
+    
+    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    assert res is True
+    
+    # 呼び出し引数のアサート
+    mock_run.assert_any_call(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, check=True)
+    mock_run.assert_any_call(["git", "add", "public/articles/issue-99.html", "public/index.html"], check=True)
+    mock_run.assert_any_call(["git", "diff", "--cached", "--quiet"])
+    mock_run.assert_any_call(["git", "commit", "-m", "feat: Issue #99 からの自動記事追加: Test Title"], check=True)
+    mock_run.assert_any_call(["git", "push", "origin", "test/issue-sync"], check=True)
+
+@patch("sync_github_issues.subprocess.run")
+def test_git_commit_and_push_no_changes(mock_run):
+    """git_commit_and_push: 変更がないためスキップするケース"""
+    mock_branch_res = MagicMock()
+    mock_branch_res.stdout = "test/issue-sync\n"
+    
+    # returncode=0 (変更なし)
+    mock_diff_res = MagicMock()
+    mock_diff_res.return_value = MagicMock(returncode=0)
+    
+    mock_run.side_effect = [mock_branch_res, MagicMock(), mock_diff_res.return_value]
+    
+    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    assert res is True
+
+@patch("sync_github_issues.subprocess.run")
+def test_git_commit_and_push_failure(mock_run):
+    """git_commit_and_push: コマンド失敗時のテスト"""
+    mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+    
+    res = sync_github_issues.git_commit_and_push("issue-99.html", 99, "Test Title")
+    assert res is False
+
