@@ -46,7 +46,7 @@ class OllamaModel(AbstractChatModel):
 
 def _initialize_model() -> AbstractChatModel:
     """設定に基づいて適切なチャットモデルのインスタンスを返すファクトリ関数"""
-    model_name = config.KNOWLEGE_BANK_MODEL
+    model_name = config.KNOWAGE_BANK_MODEL
     base_url = config.OLLAMA_BASE_URL
     
     # ollama/ プレフィックスがあれば除去
@@ -68,7 +68,7 @@ class ChatModel:
                  site_url: str = "",
                  site_name: str = ""
                  ) -> None:
-        raw_model = model_name or config.KNOWLEGE_BANK_MODEL
+        raw_model = model_name or config.KNOWAGE_BANK_MODEL
         
         # ollama/ プレフィックスのハンドリング
         self.model_name = raw_model

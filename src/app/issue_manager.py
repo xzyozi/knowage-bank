@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import httpx
 from dotenv import load_dotenv
 from app.utils.logger import logger
+from app import config
 
 load_dotenv()
 
@@ -17,8 +18,8 @@ class IssueManager:
         else:
             self.db_path = db_path
             
-        self.github_token = os.getenv("GITHUB_TOKEN")
-        self.github_repo = os.getenv("GITHUB_REPOSITORY") # 例: xzyozi/knowage-bank
+        self.github_token = config.GITHUB_TOKEN
+        self.github_repo = config.GITHUB_REPOSITORY # 例: xzyozi/knowage-bank
         
         self._init_db()
 
