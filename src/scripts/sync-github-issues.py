@@ -138,7 +138,7 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         # 3. リサーチ結果を元にした記事生成プロンプトの作成
         prompt = f"""
 以下のリサーチ結果およびGitHub Issueの内容に基づいて、技術質問ノートに掲載するための構造化JSONデータを生成してください。
-リサーチインプットから得られた具体的な技術詳細、設定手順、仕様の比較などを極力網羅して、非常に情報量の多い充実した解説記事にしてください。
+リサーチインプットから得られた具体的な技術詳細、設定手順、コードスニペット、仕様の比較などを極力網羅して、非常に情報量の多い充実した解説記事にしてください。
 
 【リサーチインプット】
 {research_text}
@@ -151,18 +151,18 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
 
 【情報網羅と構成の拡張ルール】
 1. **セクション構成の拡張**:
-   - `sections` リストには、リサーチ結果から判明した仕様、具体的な手順、Cursorとの比較など、論点ごとに最低 **3つ以上** のセクション（`h2`）を記述してください。
-   - 各セクション（`h2`）には、さらに詳細な解説や個別手順を整理するためのサブセクション（`h3`）を最低 **1つ以上** 設けてください。
+   - `sections` リストには、リサーチ結果から判明した仕様、具体的な手順、他の技術やツールとの比較など、論点ごとに最低 **4つ以上** のセクション（`h2`）を記述してください。
+   - 各セクション（`h2`）には、さらに詳細な解説や個別手順、設定例などを整理するためのサブセクション（`h3`）を最低 **2つ以上** 設けてください。
    - 各見出し（`h2`, `h3`）下の `paragraphs` リストには、1文だけの記述を避け、技術的根拠やメリット・デメリットを掘り下げて解説する段落（2〜3文程度）を最低 **2つ以上** 記述してください。
 2. **QA（質問と回答）の充実**:
-   - `qa` リストには、基本的な技術質問に加えて、「よくあるエラーや落とし穴」「トラブルシューティング」「実際の選定基準」に関する実用的なQAを最低 **3つ以上** 作成してください。
+   - `qa` リストには、基本的な技術質問に加えて、「よくあるエラーや落とし穴」「トラブルシューティング」「実際の選定基準やパフォーマンス特性」に関する実用的なQAを最低 **4つ以上** 作成してください。
 3. **参考文献（references）の抽出**:
    - 【リサーチインプット】の中に記載されている具体的なURL（Qiita、公式ドキュメント、GitHub等）や情報ソースがあれば、漏れなく `references` リストに抽出して記述してください。
 
 【JSON構造の完全性（崩壊の防止）】
 - 出力は必ず有効なJSONオブジェクトのみにしてください（前後に「以下が結果です」などの挨拶文は一切含めず、純粋に ```json ... ``` で囲んで出力してください）。
 - 各テキスト項目内の改行はエスケープされた `\n` を使用し、JSON自体の構造（括弧やカンマ）を壊さないようにしてください。
-- 文字列内にダブルクォーテーション `"` を記述する場合は必ず `\"` でエスケープしてください。
+- 文字列内にダブルクォーテーション `"` を記述する場合は必ず `\"` でエスケープしてください。キー名や構造用のダブルクォーテーションはそのままにしてください。
 
 【JSONスキーマ】
 {{
@@ -181,6 +181,10 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
     {{
       "q": "具体的な質問内容3",
       "a": "簡潔で技術的な回答3"
+    }},
+    {{
+      "q": "具体的な質問内容4",
+      "a": "簡潔で技術的な回答4"
     }}
   ],
   "sections": [
@@ -196,6 +200,13 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
           "paragraphs": [
             "より詳細な技術仕様や手順を詳しく解説する段落1...",
             "より詳細な技術仕様や手順を詳しく解説する段落2..."
+          ]
+        }},
+        {{
+          "h3": "サブセクション見出し1-2",
+          "paragraphs": [
+            "関連する補足情報や設定例などを詳しく解説する段落1...",
+            "関連する補足情報や設定例などを詳しく解説する段落2..."
           ]
         }}
       ]
@@ -236,7 +247,23 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         elif json_content.startswith("```"):
             json_content = re.sub(r"^```[a-zA-Z]*\n|```$", "", json_content).strip()
             
-        data = json.loads(json_content)
+        try:
+            data = json.loads(json_content)
+        except json.JSONDecodeError as je:
+            logger.warning(f"⚠️ JSON parsing failed on first attempt: {je}. Attempting cleanup...")
+            # 崩壊防止のための簡易クリーンアップ
+            # 制御文字（エスケープされていない本物の改行など）を文字列内でエスケープされた \n に変換することを試みるなど
+            try:
+                # 文字列内の生の改行コードを置き換える（JSONフォーマットを破壊しやすいため）
+                # ただし、JSON構造外の改行はそのままにする必要があるため、慎重に行う
+                cleaned_content = json_content
+                # 前後に何かテキストが残っている場合は再度トリム
+                cleaned_content = cleaned_content.strip()
+                data = json.loads(cleaned_content)
+                logger.info("✅ JSON parsing succeeded after cleanup.")
+            except Exception as final_err:
+                logger.error(f"❌ JSON structure is corrupted: {final_err}\nRaw Content snippet:\n{json_content[:500]}...")
+                raise je
         
         # HTML記事の構築と保存
         builder = ArticleBuilder()
