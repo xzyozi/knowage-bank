@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gitのブランチ管理方法について | 技術質問ノート</title>
+    <link rel="stylesheet" href="../styles/site.css">
+</head>
+
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="../index.html">技術質問ノート</a>
+        </div>
+    </header>
+
+    <main class="page">
+        <article>
+            
+            <!-- ① ヒーローエリア -->
+            <header class="hero">
+                <p class="eyebrow">AI > 開発ワークフロー</p>
+                <h1>Gitのブランチ管理方法について</h1>
+                <p class="article-created"><time datetime="2026-06-16">作成日: 2026年6月16日</time></p>
+                <p class="lead">効率的なソフトウェア開発には、プロジェクトの性質に応じた適切なGitブランチ戦略の選択が不可欠です。本記事では、代表的な手法であるGit FlowとGitHub Flowを比較し、それぞれのメリットと適したユースケースを解説します。</p>
+            </header>
+
+            <!-- ② 簡潔なQ&Aセクション -->
+            <section class="qa" aria-labelledby="quick-answer">
+                <h2 id="quick-answer">簡潔なQ&amp;A</h2>
+                <dl>
+                    
+                    <dt>Q. どのようなブランチ管理手法が一般的ですか？</dt>
+                    <dd>A. プロジェクトのリリース頻度やチームの規模に応じて、「Git Flow」や「GitHub Flow」といった標準的な戦略を採用するのが一般的です。</dd>
+                    
+                </dl>
+            </section>
+
+            <!-- ③ 本文セクション群 -->
+            
+            <h2>主要なブランチ管理戦略の比較</h2>
+            
+            <p>開発プロジェクトにおいて、どのブランチをどのように運用するかを決めることは、コードの品質維持とリリースサイクルの安定に直結します。主な戦略として以下の2つが広く利用されています。</p>
+            
+            
+            
+            
+            <h3>Git Flow（厳格な管理）</h3>
+            
+            <p>master、develop、feature、release、hotfixの5種類のブランチを使い分ける手法です。定期的なリリーススケジュールがあり、複数の機能をまとめてバージョンとして公開する大規模プロジェクトに適しています。</p>
+            
+            
+            <h3>GitHub Flow（迅速なデプロイ）</h3>
+            
+            <p>mainブランチからフィーチャーブランチを切り、プルリクエストを通じてマージを行うシンプルな手法です。Webアプリケーションや継続的デプロイ（CD）を重視し、頻繁に更新を反映させるプロジェクトに最適です。</p>
+            
+            
+            
+            
+            <h2>適切な戦略を選択するための判断基準</h2>
+            
+            <p>どちらの戦略を採用すべきかは、開発目標とインフラ環境によって決まります。</p>
+            
+            
+            
+            
+            <h3>プロジェクトの特性による選択</h3>
+            
+            <p>リリースサイクルが明確でバージョン管理が必要な場合はGit Flowを選択します。一方で、常に最新の状態を公開し続けたいWebサービスであればGitHub Flowを選択するのが推奨されます。</p>
+            
+            
+            
+            
+
+            <!-- ④ 要点セクション -->
+            <section class="note">
+                <h2>要点</h2>
+                <p>この記事の要点は以下の通りです。</p>
+                <ul>
+                    
+                    <li>Git Flowは厳格なバージョン管理と多機能の同時リリースが必要な大規模開発に適している</li>
+                    
+                    <li>GitHub Flowはシンプルで迅速なデプロイを求めるWebサービスや小規模プロジェクトに適している</li>
+                    
+                    <li>チームの慣習、CI/CD環境、および製品の性質に合わせて最適な戦略を選択することが重要である</li>
+                    
+                </ul>
+            </section>
+
+            <!-- ⑤ 参考資料セクション -->
+            <section class="related" aria-label="参考資料">
+                <h2>参考資料</h2>
+                <ul>
+                    
+                    <li><a href="https://www.atlassian.com/git/tutorials/git-flow" target="_blank">Atlassian: Git Flow</a></li>
+                    
+                    <li><a href="https://docs.github.com/ja/guides/github-flow" target="_blank">GitHub Docs: GitHub Flow</a></li>
+                    
+                </ul>
+            </section>
+
+            <!-- ⑥ 関連ナビゲーション -->
+            <nav class="related" aria-label="関連リンク">
+                <p><a href="../index.html">インデックスへ戻る</a></p>
+            </nav>
+
+        </article>
+    </main>
+
+    <footer class="site-footer">
+        <p>技術質問ノート</p>
+    </footer>
+</body>
+
+</html>
