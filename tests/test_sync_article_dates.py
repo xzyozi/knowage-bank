@@ -4,6 +4,9 @@ import importlib.util
 from datetime import datetime
 import pytest
 
+# ファイル全体のテストを結合テスト（integration）としてマーク
+pytestmark = pytest.mark.integration
+
 # ハイフンを含むスクリプトファイル 'sync-article-dates.py' を動的インポート
 script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "scripts", "sync-article-dates.py"))
 spec = importlib.util.spec_from_file_location("sync_article_dates", script_path)
