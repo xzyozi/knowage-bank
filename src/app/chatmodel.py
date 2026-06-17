@@ -121,6 +121,7 @@ class ChatModel:
             "presence_penalty": 0.3,
             "n": 1,
             "stream": False,
+            "max_tokens": 4096,  # 構成拡張による出力の長文化に対応
             "extra_headers": self.extra_headers,
             "extra_body": self.extra_body,
         }
