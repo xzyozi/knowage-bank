@@ -31,6 +31,49 @@ try:
 except Exception as e:
     logger.error(f"Failed to import sync-article-dates: {e}")
 
+def repair_truncated_json(json_str: str) -> str:
+    """途中で切れてしまったJSONの閉じ括弧やクォーテーションを補完してパース可能にする"""
+    json_str = json_str.strip()
+    if not json_str:
+        return json_str
+    
+    in_string = False
+    escaped = False
+    stack = []
+    i = 0
+    
+    while i < len(json_str):
+        char = json_str[i]
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == '"':
+            in_string = not in_string
+        elif not in_string:
+            if char in ('{', '['):
+                stack.append(char)
+            elif char in ('}', ']'):
+                if stack:
+                    top = stack[-1]
+                    if (char == '}' and top == '{') or (char == ']' and top == '['):
+                        stack.pop()
+        i += 1
+        
+    # 文字列が閉じられていない場合はダブルクォートを補完
+    if in_string:
+        json_str += '"'
+        
+    # 残っているスタックの括弧を逆順に閉じる
+    while stack:
+        top = stack.pop()
+        if top == '{':
+            json_str += '}'
+        elif top == '[':
+            json_str += ']'
+            
+    return json_str
+
 def sanitize_filename(title: str, number: int) -> str:
     """Issueタイトルから安全なファイル名を生成する。日本語の場合はissue-{number}.htmlにフォールバック"""
     # 英数字とハイフンだけを抽出
@@ -250,19 +293,14 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         try:
             data = json.loads(json_content)
         except json.JSONDecodeError as je:
-            logger.warning(f"⚠️ JSON parsing failed on first attempt: {je}. Attempting cleanup...")
-            # 崩壊防止のための簡易クリーンアップ
-            # 制御文字（エスケープされていない本物の改行など）を文字列内でエスケープされた \n に変換することを試みるなど
+            logger.warning(f"⚠️ JSON parsing failed on first attempt: {je}. Attempting cleanup and repair...")
             try:
-                # 文字列内の生の改行コードを置き換える（JSONフォーマットを破壊しやすいため）
-                # ただし、JSON構造外の改行はそのままにする必要があるため、慎重に行う
-                cleaned_content = json_content
-                # 前後に何かテキストが残っている場合は再度トリム
-                cleaned_content = cleaned_content.strip()
+                # 途中で切れたJSON（閉じ括弧欠損等）の修復
+                cleaned_content = repair_truncated_json(json_content)
                 data = json.loads(cleaned_content)
-                logger.info("✅ JSON parsing succeeded after cleanup.")
+                logger.info("✅ JSON parsing succeeded after cleanup and repair.")
             except Exception as final_err:
-                logger.error(f"❌ JSON structure is corrupted: {final_err}\nRaw Content snippet:\n{json_content[:500]}...")
+                logger.error(f"❌ JSON structure is corrupted: {final_err}\nRaw Content snippet (first 500 chars):\n{json_content[:500]}...\nRaw Content snippet (last 500 chars):\n{json_content[-500:] if len(json_content) > 500 else json_content}...")
                 raise je
         
         # HTML記事の構築と保存
