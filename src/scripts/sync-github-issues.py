@@ -277,10 +277,14 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         
         logger.info("Requesting article generation from LocalLLM...")
         response = model.generate_response(history)
-        if not response or not response.content:
+        raw_content = response.content if (response and response.content) else None
+        if not raw_content and response and hasattr(response, "reasoning") and response.reasoning:
+            logger.info("LocalLLM content was empty, but reasoning content was found. Using reasoning content.")
+            raw_content = response.reasoning
+
+        if not raw_content:
             raise Exception("Empty response from LocalLLM")
             
-        raw_content = response.content
         json_content = raw_content.strip()
         
         # markdownコードブロックの抽出
