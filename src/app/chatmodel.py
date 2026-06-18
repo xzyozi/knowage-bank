@@ -112,6 +112,14 @@ class ChatModel:
         max_retries = 3
         retry_wait_seconds = 15
 
+        # Ollama用のコンテキスト制限拡張設定を extra_body に差し込む
+        extra_body_params = dict(self.extra_body)
+        if "options" not in extra_body_params:
+            extra_body_params["options"] = {
+                "num_ctx": 8192,
+                "num_predict": 4096
+            }
+
         api_params = {
             "model": self.model_name,
             "messages": history.get("messages", []),
@@ -123,7 +131,7 @@ class ChatModel:
             "stream": False,
             "max_tokens": 4096,  # 構成拡張による出力の長文化に対応
             "extra_headers": self.extra_headers,
-            "extra_body": self.extra_body,
+            "extra_body": extra_body_params,
         }
 
         # ツールが明示的に渡された場合のみ、パラメータに追加
