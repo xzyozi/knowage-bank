@@ -32,11 +32,21 @@ except Exception as e:
     logger.error(f"Failed to import sync-article-dates: {e}")
 
 def repair_truncated_json(json_str: str) -> str:
-    """途中で切れてしまったJSONの閉じ括弧やクォーテーションを補完してパース可能にする"""
+    """途中で切れてしまったJSONを複数段階で修復してパース可能な状態にする"""
     json_str = json_str.strip()
     if not json_str:
         return json_str
     
+    # ステップ1: 末尾が不完全なキー定義（値がない "key": のみ）で終わっている場合に null を補完
+    # 例: ..."q": -> ..."q": null
+    import re as _re
+    # 末尾が `"key":` 形式で終わっている場合（値が欠損）
+    json_str = _re.sub(r'"([^"]+)"\s*:\s*$', r'"\1": null', json_str.rstrip())
+    
+    # ステップ2: 末尾が `,` で終わっている場合は除去（不完全なリストの末尾カンマ）
+    json_str = json_str.rstrip().rstrip(',')
+    
+    # ステップ3: 括弧とクォーテーションのスタック解析で不足している閉じ記号を追加
     in_string = False
     escaped = False
     stack = []
@@ -206,6 +216,8 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
 - 出力は必ず有効なJSONオブジェクトのみにしてください（前後に「以下が結果です」などの挨拶文は一切含めず、純粋に ```json ... ``` で囲んで出力してください）。
 - 各テキスト項目内の改行はエスケープされた `\n` を使用し、JSON自体の構造（括弧やカンマ）を壊さないようにしてください。
 - 文字列内にダブルクォーテーション `"` を記述する場合は必ず `\"` でエスケープしてください。キー名や構造用のダブルクォーテーションはそのままにしてください。
+- **出力トークンの上限に達しそうな場合は、最後のセクションや段落を短くしてでも、必ず JSON の閉じ括弧 `}}` まで出力してください。途中で切れた文字列を開いたまま終了するのは最も避けるべき状態です。**
+
 
 【JSONスキーマ】
 {{
