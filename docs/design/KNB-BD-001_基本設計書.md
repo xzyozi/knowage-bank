@@ -89,57 +89,36 @@ related_documents:
 
 ## 3. データフロー
 
-```
-[ユーザー] ── 質問テーマ指定 ──> [src/scripts/generate-article.py]
-                                                   │
-                                                   ▼
-                                 [LocalLLM (Ollama Model)] ── (JSONで記事データ出力)
-                                                   │
-                                                   ▼
-                                    [src/app/article_builder.py]
-                                    ・カテゴリ名の正規化 (揺らぎ補正)
-                                    ・Jinja2で HTML を安全にレンダリング
-                                                   │
-                                                   ▼
-                           ┌───────────────────────┴───────────────────────┐
-                           ▼                                               ▼
-     articles/<slug>.html を生成・保存                   logs/llm_output.log に生応答を記録
-                           │
-                           ▼
-          [src/scripts/sync-article-dates.py] が自動実行
-                           │
-                           ▼
-          ┌────────────────┴────────────────┐
-          ▼                                 ▼
-    各記事の <time> を更新             public/index.html を再生成
-    （git 初回コミット日）            （新着6件 + カテゴリ別）
-          │                                 │
-          └────────────────┬────────────────┘
-                           ▼
-                   git add & commit
-                           │
-                           ▼
-                  git push origin test/* (または feat/*)
-                           │
-                           ▼
-          GitHub Actions (deploy-pages.yml) が発火
-                           │
-                           ▼
-              GitHub Pages へデプロイ完了
+```mermaid
+flowchart TD
+    User["ユーザー"] -->|質問テーマ指定| GenScript["src/scripts/generate-article.py"]
+    GenScript --> LocalLLM["LocalLLM (Ollama Model)"]
+    LocalLLM -->|JSONで記事データ出力| Builder["src/app/article_builder.py"]
+    
+    Builder -->|Jinja2レンダリング & カテゴリ補正| GenHTML["public/articles/<slug>.html を生成・保存"]
+    Builder -->|生応答記録| LLMLog["logs/llm_output.log"]
+    
+    GenHTML --> SyncScript["src/scripts/sync-article-dates.py 自動実行"]
+    
+    SyncScript --> UpdateTime["各記事の <time> を更新 (git初回コミット日)"]
+    SyncScript --> GenIndex["public/index.html を再生成 (新着6件 + カテゴリ別)"]
+    
+    UpdateTime --> GitCommit["git add & commit"]
+    GenIndex --> GitCommit
+    
+    GitCommit --> GitPush["git push origin test/* / feat/*"]
+    GitPush --> GHActions["GitHub Actions (deploy-pages.yml)"]
+    GHActions --> GHPages["GitHub Pages デプロイ完了"]
 ```
 
 ## 4. コンポーネント依存関係
 
-```
-index.html ─────────────────────────── styles/site.css
-    │                                       ▲
-    │ href="articles/*.html"                │
-    ▼                                       │
-articles/<slug>.html ───────────── ../styles/site.css
-    │
-    │ src="../images/*.svg"
-    ▼
-images/*.svg
+```mermaid
+graph TD
+    IndexHTML["public/index.html"] -->|href="articles/*.html"| ArticleHTML["public/articles/<slug>.html"]
+    IndexHTML -->|href="styles/site.css"| SiteCSS["public/styles/site.css"]
+    ArticleHTML -->|href="../styles/site.css"| SiteCSS
+    ArticleHTML -->|src="../images/*.svg"| Images["public/images/*.svg"]
 ```
 
 - `index.html` は `styles/site.css` を直接参照（同階層）

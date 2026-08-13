@@ -86,6 +86,13 @@ related_documents:
 </a>
 ```
 
+```mermaid
+graph LR
+    Card["a.article-row"] --> Aside["left: div.article-row-aside<br>(日付・タグ)"]
+    Card --> Main["center: div.article-row-main<br>(タイトル・概要)"]
+    Card --> Meta["right: span.article-row-meta<br>(メタ情報)"]
+```
+
 - タイトルは中央カラムに幅を確保し、細い列での不自然な折り返しを避ける
 - スタイルの詳細は `public/styles/site.css` の `.article-row*` を参照
 

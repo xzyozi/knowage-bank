@@ -59,47 +59,15 @@ description: >
 
 ### 2.3 処理フロー
 
-```
-Phase 1: 調査
-├── public/index.html を読み込み、既存記事一覧を把握
-├── docs/homepage.md を読み、レイアウトルールを確認
-├── config/category_config.json を読み、カテゴリ定義を確認
-├── public/styles/site.css を読み、使用可能なクラスを確認
-├── 関連する public/articles/*.html を読み、テンプレート構造を確認
-└── public/images/ を確認、必要な図がないか判断
-
-Phase 2: 判定
-├── 新規質問か？ → 新規ページ作成フローへ
-├── 既存ページへの追加か？ → 更新フローへ
-└── 複数の独立した質問か？ → 質問ごとに1ファイル作成
-
-Phase 3A: 新規ページ作成
-├── ファイル名決定（英小文字ハイフン区切り）
-├── 記事 HTML 作成（article-spec.md 準拠）
-│   ├── ヒーロー（eyebrow, h1, 作成日, lead）
-│   ├── 簡潔なQ&A（section.qa > dl > dt/dd）
-│   ├── 図解作成（必要なら images/ に SVG）
-│   ├── 本文セクション群
-│   ├── 要点（section.note）
-│   ├── 参考資料（一次情報リンク必須）
-│   └── 関連ナビゲーション
-├── 記事HTMLの eyebrow に正しいカテゴリを設定
-└── sync-article-dates.py を実行
-
-Phase 3B: 既存ページ更新
-├── 対象ページ特定（ファイル名/タイトル/トピック）
-├── 追加する内容の判定
-│   ├── Q&A の追加 → section.qa の dl に dt/dd 追加
-│   ├── 新セクション → h2/h3 を追加
-│   └── 補足・訂正 → 「補足」「よくある誤解」セクション追加
-├── 無関係なセクションは変更しない
-└── sync-article-dates.py を実行（必要なら）
-
-Phase 4: 検証
-├── rg --files で作成ファイル確認
-├── rg "href=|src=" でリンク・画像パス確認
-├── 見出し階層の正しさ確認
-└── 参考資料に一次情報が含まれることを確認
+```mermaid
+flowchart TD
+    P1["Phase 1: 調査<br>・index.html / 既存記事 / category_config.json の確認<br>・site.css / テンプレート / images の状態把握"] --> P2{"Phase 2: 判定"}
+    
+    P2 -->|新規質問| P3A["Phase 3A: 新規ページ作成<br>・ファイル名決定 (slug.html)<br>・HTML構成要素作成 (ヒーロー, Q&A, 本文, 要点, 参考資料)<br>・eyebrow 設定 & sync-article-dates.py 実行"]
+    P2 -->|既存更新| P3B["Phase 3B: 既存ページ更新<br>・対象ページ特定 & 変更内容判定 (Q&A/セクション追加)<br>・sync-article-dates.py 実行"]
+    
+    P3A --> P4["Phase 4: 検証<br>・rg でファイル / リンク / 画像パス確認<br>・見出し階層 & 一次情報リンクの正しさ確認"]
+    P3B --> P4
 ```
 
 ### 2.4 入力仕様
@@ -182,73 +150,16 @@ description: >
 
 ### 3.3 処理フロー
 
-```
-Phase 1: 主張の把握（Capture The Claim）
-├── ユーザー提供のURLまたは引用を読み込む
-├── 特定する要素:
-│   ├── 主張者（Claimant）
-│   ├── 発表場所（Venue）
-│   ├── 主張の日付 / 記事の日付
-│   ├── 中心的主張（1文）
-│   ├── 補助的主張
-│   ├── 条件・留保・不確実性・ジョーク
-│   └── 見出しの強調 vs 本文の実際
-└── アクセス失敗時: タイトル/URLスラグ/引用テキストで検索
-
-Phase 2: 一次情報の確認（Find Primary Context）
-├── 最高コンテキストのソースを探す:
-│   ├── フル動画/公式イベントページ
-│   ├── トランスクリプト/オリジナルインタビュー
-│   ├── 主張者本人の出版物
-│   ├── 公式ドキュメント/MLスレッド
-│   └── データセット/論文/ベンチマーク/法的書類
-├── 一次情報で記事のフレーミングを修正・補足
-└── 一次情報がない場合は制限を明示
-
-Phase 3: 主張マップ作成（Build The Claim Map）
-├── Actually said（実際に言った）
-├── Likely intended meaning（意図した意味の推定）
-├── Not said / overread（言っていない/過剰解釈）
-├── Practical implication（実務的な意味）
-└── Open uncertainty（未解明の不確実性）
-
-Phase 4: 第三者反応収集（Collect Third-Party Reactions）
-├── ソース種別:
-│   ├── 信頼できるメディア
-│   ├── 専門家ブログ/ニュースレター
-│   ├── フォーラム（HN, Reddit, GitHub Issues, ML, SE）
-│   ├── SNS（注意が必要な信号として）
-│   └── 研究/ベンチマークレポート
-├── 各反応の記録:
-│   ├── Position（支持/批判/中立/メタ）
-│   ├── Argument（理由）
-│   ├── Evidence（データ/経験/一次情報/感想のみ）
-│   └── Bias/Incentive（ベンダー/思想/コミュニティ規範）
-└── 影響力のある反応は記録、ただしノイズとラベル
-
-Phase 5: ノイズフィルタリング（Filter Noise）
-├── ダウンウェイト対象:
-│   ├── 見出しだけの引用
-│   ├── 人身攻撃
-│   ├── 条件付き主張の絶対化
-│   ├── 無関係な信念の検証に利用
-│   ├── 同一記事のリライト
-│   ├── 記述/規範の混同
-│   └── エンゲージメント以外のエビデンスなし
-└── ノイズパターンとして要約（隠さない）
-
-Phase 6: 出力生成（Write The Output）
-├── テキスト出力の場合:
-│   ├── 1. Short answer
-│   ├── 2. Context（誰/どこ/いつ）
-│   ├── 3. Claim map
-│   ├── 4. Supportive reactions（2-5テーマ）
-│   ├── 5. Critical reactions（2-5テーマ）
-│   ├── 6. Noise check
-│   ├── 7. Bottom line
-│   └── 8. Sources
-└── HTML記事として保存の場合:
-    └── qa-html-note Skill と連携して記事構造に変換
+```mermaid
+flowchart TD
+    P1["Phase 1: 主張の把握 (Capture The Claim)<br>・URL / 引用の読み込み<br>・主張者, 発表場所, 日付, 中心的主張の特定"] --> P2["Phase 2: 一次情報の確認 (Find Primary Context)<br>・フル動画, トランスクリプト, 論文, 公式文書の特定<br>・フレーミングの修正・補足"]
+    P2 --> P3["Phase 3: 主張マップ作成 (Build The Claim Map)<br>・実際に言った内容 vs 推定意図 vs 過剰解釈の分離"]
+    P3 --> P4["Phase 4: 第三者反応収集 (Collect Third-Party Reactions)<br>・メディア, 専門家, フォーラムの反応収集と分類"]
+    P4 --> P5["Phase 5: ノイズフィルタリング (Filter Noise)<br>・見出し釣り, 人身攻撃, 歪曲のダウンウェイト"]
+    P5 --> P6{"Phase 6: 出力生成 (Write The Output)"}
+    
+    P6 -->|デフォルト| OutText["テキスト回答<br>(結論, コンテキスト, 主張マップ, 賛否, ノイズ, 総評, ソース)"]
+    P6 -->|保存依頼あり| OutHTML["qa-html-note と連携して記事HTML構造に変換"]
 ```
 
 ### 3.4 入力仕様
@@ -319,17 +230,21 @@ Phase 6: 出力生成（Write The Output）
 
 **トリガー**: ユーザーが主張検証の結果を「記事にして保存して」と依頼した場合
 
-```
-claim-context-review の出力
-        │
-        ▼
-qa-html-note の記事構造に変換
-        │
-        ├── ヒーロー: 主張の主題を h1 に
-        ├── Q&A: 「この主張は正確か？」→ 短い結論
-        ├── 本文: 主張マップ → 反応 → ノイズ → 総評
-        ├── 参考資料: 使用ソース全て
-        └── 記事HTMLの eyebrow に正しいカテゴリを設定 ➔ sync 実行
+```mermaid
+flowchart TD
+    ReviewOut["claim-context-review の分析出力"] --> Convert["qa-html-note の記事構造に変換"]
+    
+    Convert --> H1["ヒーロー: 主張の主題を h1 に設定"]
+    Convert --> QA["Q&A: この主張は正確か？ → 短い結論"]
+    Convert --> Body["本文: 主張マップ → 反応 → ノイズ → 総評"]
+    Convert --> Ref["参考資料: 使用ソース全てを一次情報リンクで格納"]
+    
+    H1 --> Eyebrow["eyebrow に正しいカテゴリを設定"]
+    QA --> Eyebrow
+    Body --> Eyebrow
+    Ref --> Eyebrow
+    
+    Eyebrow --> SyncScript["sync-article-dates.py を実行し公開"]
 ```
 
 ### 連携時のクラスタ割り当て

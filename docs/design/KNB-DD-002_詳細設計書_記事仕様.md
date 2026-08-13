@@ -70,6 +70,26 @@ related_documents:
 </html>
 ```
 
+```mermaid
+graph TD
+    HTML["html (lang='ja')"] --> Head["head"]
+    HTML --> Body["body"]
+    
+    Body --> Header["header.site-header"]
+    Body --> Main["main.page"]
+    Body --> Footer["footer.site-footer"]
+    
+    Main --> Article["article"]
+    
+    Article --> S1["1. ヒーロー (header.hero)"]
+    Article --> S2["2. 簡潔なQ&A (section.qa)"]
+    Article --> S3["3. 図解 (figure.figure - 任意)"]
+    Article --> S4["4. 本文セクション群 (h2 + h3 + p)"]
+    Article --> S5["5. 要点 (section.note)"]
+    Article --> S6["6. 参考資料 (section.related)"]
+    Article --> S7["7. 関連ナビゲーション (nav.related)"]
+```
+
 ## 3. `<head>` セクション
 
 ```html

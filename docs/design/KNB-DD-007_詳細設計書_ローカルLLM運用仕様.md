@@ -90,26 +90,13 @@ related_documents:
 
 「Jinja2テンプレートによるHTML出力保証 ＋ LLMには構造化JSONのみを出力させる」という方式を採用している。
 
-```
-ユーザー → 質問テキスト / Issue
-              │
-              ▼
-   Deep Research (MCP) / リサーチ
-              │
-              ▼
-    中間成果物（JSON/テキスト）
-              │
-              ▼
-   ローカルLLM (ChatModel wrapper)
-   ・JSONのみを出力 (Title, Lead, QA, Sections)
-              │
-              ▼
-   article_builder.py (Jinja2)
-   ・HTMLテンプレートにデータを注入
-   ・カテゴリ表記ゆれ補正
-              │
-              ▼
-   public/articles/<slug>.html 保存
+```mermaid
+flowchart TD
+    User["ユーザー / Issue (質問テーマ)"] --> MCP["Deep Research (MCP) / リサーチ実行"]
+    MCP --> MidData["中間成果物 (JSON / テキスト要約)"]
+    MidData --> LocalLLM["ローカルLLM (ChatModel wrapper)<br>・JSONのみを出力 (Title, Lead, QA, Sections)"]
+    LocalLLM --> Builder["article_builder.py (Jinja2)<br>・HTMLテンプレートにデータを注入<br>・カテゴリ表記ゆれ補正"]
+    Builder --> SaveHTML["public/articles/<slug>.html 保存"]
 ```
 
 ### コンポーネント役割
@@ -127,22 +114,10 @@ related_documents:
 
 ### 4.1 パイプライン構成
 
-```
-Deep Research（外部APIモデル or MCPサービス）
-   └── 一次情報URL収集 + 事実確認 + ソース要約
-              │
-              ▼
-       中間成果物（JSON or Markdown）
-       ・検証済みURL一覧
-       ・各ソースの要約
-       ・事実関係の整理
-              │
-              ▼
-       ローカル14B（Q4）
-       ・HTML記事生成（テンプレート準拠）
-       ・Q&Aセクション構成
-       ・本文の日本語ライティング
-       ・中間成果物の参考URLをそのまま埋め込み
+```mermaid
+flowchart TD
+    DR["Deep Research (外部APIモデル or MCPサービス)<br>・一次情報URL収集 + 事実確認 + ソース要約"] --> MidArtifact["中間成果物 (JSON or Markdown)<br>・検証済みURL一覧<br>・各ソースの要約<br>・事実関係の整理"]
+    MidArtifact --> Local14B["ローカル14B (Q4)<br>・HTML記事データ生成 (テンプレート準拠)<br>・Q&Aセクション構成<br>・本文の日本語ライティング<br>・参考URLの埋め込み"]
 ```
 
 ### 4.2 役割分担マッピング

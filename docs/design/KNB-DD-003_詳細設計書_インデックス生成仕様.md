@@ -208,14 +208,14 @@ python3 scripts/sync-article-dates.py
 
 ### 処理フロー
 
-```
-1. ARTICLE_CLUSTER を読み込み、対象ファイル一覧を生成
-2. 各ファイルの git 初回コミット日を取得
-3. 各記事 HTML の <time> 要素を更新
-4. 新着リスト（上位6件）を生成
-5. クラスタごとに記事を分類・ソート
-6. index.html テンプレートに値を埋めて出力
-7. public/index.html に書き出し
+```mermaid
+flowchart TD
+    Step1["1. ARTICLE_CLUSTER / ファイル走査で対象HTML一覧を取得"] --> Step2["2. 各ファイルの git 初回コミット日を取得"]
+    Step2 --> Step3["3. 各記事 HTML の <time> 要素を更新・書き出し"]
+    Step3 --> Step4["4. 新着リスト（上位6件）を作成日降順で抽出し生成"]
+    Step4 --> Step5["5. クラスタごとに記事を分類・代表日降順でソート"]
+    Step5 --> Step6["6. index.html テンプレートにカードHTML群を埋め込み"]
+    Step6 --> Step7["7. public/index.html に保存"]
 ```
 
 ### 出力

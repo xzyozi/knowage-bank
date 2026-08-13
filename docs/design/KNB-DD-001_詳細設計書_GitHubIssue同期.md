@@ -39,39 +39,20 @@ related_documents:
 
 ## 2. 処理フロー
 
-```
-     【定期起動（30分 / 1時間ごと）】
-                 │
-                 ▼
-     [STEP 1: 前回取得日時(since)の読み込み]
-                 │
-                 ▼
-     [STEP 2: GitHub API からの差分Issue取得]
-      ・条件: sort=updated, direction=desc, state=all, per_page=100, since=前回日時
-                 │
-                 ▼
-     [STEP 3: ローカル状態管理(JSON)の更新]
-      ・新規Issue: "unprocessed"（未処理）として登録
-      ・更新Issue: タイトルや本文に変更があればローカル管理情報も更新
-                 │
-                 ▼
-     [STEP 4: 処理対象Issueの選定（スロットリング）]
-      ・"unprocessed" 状態の最も古いIssueを1件だけ選択
-                 │
-                 ▼
-     [STEP 5: 記事自動生成パイプラインの実行（MCP連携）]
-      ・ステータスを "processing"（処理中）に変更
-      ・LLMでIssueのタイトル/本文から「リサーチ用クエリ」を抽出・生成
-      ・MCP（SSE経由）で `deepresearchMCP` に接続し `run_deep_research` ツールを実行
-      ・取得したリサーチ結果をインプットとして最終的な記事HTMLをLLMで構造化生成
-      ・成功時 ➔ ステータスを "processed"（処理完了）に更新
-      ・失敗時 ➔ ステータスを "failed" に更新
-                 │
-                 ▼
-     [STEP 6: 今回の処理日時の保存 (sinceの更新)]
-                 │
-                 ▼
-               [終了]
+```mermaid
+flowchart TD
+    Cron["【定期起動（30分 / 1時間ごと）】"] --> Step1["STEP 1: 前回取得日時(since)の読み込み"]
+    Step1 --> Step2["STEP 2: GitHub API からの差分Issue取得<br>(sort=updated, direction=desc, state=all, per_page=100, since=前回日時)"]
+    Step2 --> Step3["STEP 3: ローカル状態管理(JSON)の更新<br>・新規Issue: unprocessed として登録<br>・更新Issue: タイトルや本文変更時にローカル情報更新"]
+    Step3 --> Step4["STEP 4: 処理対象Issueの選定（スロットリング）<br>・unprocessed 状態の最も古いIssueを1件選択"]
+    Step4 --> Step5["STEP 5: 記事自動生成パイプラインの実行（MCP連携）<br>・ステータスを processing に変更<br>・LLMでリサーチクエリ生成 & MCP deepresearchMCP 実行<br>・構造化JSONから記事HTMLをビルド"]
+    
+    Step5 -->|成功| Step5Success["ステータスを processed に更新"]
+    Step5 -->|失敗| Step5Fail["ステータスを failed に更新"]
+    
+    Step5Success --> Step6["STEP 6: 今回の処理日時の保存 (sinceの更新)"]
+    Step5Fail --> Step6
+    Step6 --> EndNode(["[終了]"])
 ```
 
 ---
