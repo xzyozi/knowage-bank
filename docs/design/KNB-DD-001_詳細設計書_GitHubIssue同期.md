@@ -1,6 +1,32 @@
-# GitHub Issue 取得・ローカル管理 仕様書
+---
+title: "詳細設計書（GitHub Issue同期・ローカル管理仕様）"
+document_type: "detailed_design"
+version: "1.0"
+created_at: "2026-06-16"
+updated_at: "2026-08-13"
+author: "開発チーム"
+purpose: "GitHubリポジトリからIssueを取得し、記事自動生成トリガー制御および処理状況のローカル管理仕様を定義するため"
+related_documents:
+  - "KNB-BD-001_基本設計書.md"
+  - "KNB-DD-002_詳細設計書_記事仕様.md"
+  - "KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md"
+---
 
-本ドキュメントは、指定したGitHubリポジトリからIssueを取得し、その情報を元にした自動記事生成のトリガー制御、および処理状況のローカル管理を行うシステムの基本設計を定義する。
+# 詳細設計書（GitHub Issue同期・ローカル管理仕様）
+**GitHub Issue 取得・ローカル管理・MCP連携制御仕様**
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 文書番号 | KNB-DD-001 |
+| ドキュメント名 | 詳細設計書（GitHub Issue同期・ローカル管理仕様） |
+| 版数 | Rev.1.0 (初版制定) |
+| 改訂日 | 2026-08-13 |
+| 作成日 | 2026-06-16 |
+| 作成者 | 開発チーム |
+
+---
+
+本ドキュメントは、指定したGitHubリポジトリからIssueを取得し、その情報を元にした自動記事生成のトリガー制御、および処理状況のローカル管理を行うシステムの詳細設計を定義する。
 
 ## 1. 目的と基本方針
 
@@ -13,39 +39,20 @@
 
 ## 2. 処理フロー
 
-```
-     【定期起動（30分 / 1時間ごと）】
-                 │
-                 ▼
-     [STEP 1: 前回取得日時(since)の読み込み]
-                 │
-                 ▼
-     [STEP 2: GitHub API からの差分Issue取得]
-      ・条件: sort=updated, direction=desc, state=all, per_page=100, since=前回日時
-                 │
-                 ▼
-     [STEP 3: ローカル状態管理(JSON)の更新]
-      ・新規Issue: "unprocessed"（未処理）として登録
-      ・更新Issue: タイトルや本文に変更があればローカル管理情報も更新
-                 │
-                 ▼
-     [STEP 4: 処理対象Issueの選定（スロットリング）]
-      ・"unprocessed" 状態の最も古いIssueを1件だけ選択
-                 │
-                 ▼
-     [STEP 5: 記事自動生成パイプラインの実行（MCP連携）]
-      ・ステータスを "processing"（処理中）に変更
-      ・LLMでIssueのタイトル/本文から「リサーチ用クエリ」を抽出・生成
-      ・MCP（SSE経由）で `deepresearchMCP` に接続し `run_deep_research` ツールを実行
-      ・取得したリサーチ結果をインプットとして最終的な記事HTMLをLLMで構造化生成
-      ・成功時 ➔ ステータスを "processed"（処理完了）に更新
-      ・失敗時 ➔ ステータスを "failed" に更新
-                 │
-                 ▼
-     [STEP 6: 今回の処理日時の保存 (sinceの更新)]
-                 │
-                 ▼
-               [終了]
+```mermaid
+flowchart TD
+    Cron["【定期起動（30分 / 1時間ごと）】"] --> Step1["STEP 1: 前回取得日時(since)の読み込み"]
+    Step1 --> Step2["STEP 2: GitHub API からの差分Issue取得<br>(sort=updated, direction=desc, state=all, per_page=100, since=前回日時)"]
+    Step2 --> Step3["STEP 3: ローカル状態管理(JSON)の更新<br>・新規Issue: unprocessed として登録<br>・更新Issue: タイトルや本文変更時にローカル情報更新"]
+    Step3 --> Step4["STEP 4: 処理対象Issueの選定（スロットリング）<br>・unprocessed 状態の最も古いIssueを1件選択"]
+    Step4 --> Step5["STEP 5: 記事自動生成パイプラインの実行（MCP連携）<br>・ステータスを processing に変更<br>・LLMでリサーチクエリ生成 & MCP deepresearchMCP 実行<br>・構造化JSONから記事HTMLをビルド"]
+    
+    Step5 -->|成功| Step5Success["ステータスを processed に更新"]
+    Step5 -->|失敗| Step5Fail["ステータスを failed に更新"]
+    
+    Step5Success --> Step6["STEP 6: 今回の処理日時の保存 (sinceの更新)"]
+    Step5Fail --> Step6
+    Step6 --> EndNode(["[終了]"])
 ```
 
 ---
@@ -73,7 +80,7 @@ Issueをフェッチする際のAPIエンドポイントおよびクエリパラ
 GitHub上のIssueを書き換えないため、処理状況はローカルのJSONデータベースで一元管理する。
 
 ### 4.1 管理ファイル配置
-- 配置パス: `data/issue_status.json` (未存在時は初期化時に自動作成、`.gitignore` で競合を避けるかリポジトリ管理するかは要検討)
+- 配置パス: `data/issue_status.json` (未存在時は初期化時に自動作成)
 
 ### 4.2 JSON スキーマ
 ```json
@@ -140,3 +147,8 @@ MCPサーバーとのSSE接続には以下の環境変数を使用する。
 
 ---
 
+## 7. 改訂履歴 (Change Log)
+
+| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
+| :--- | :--- | :--- | :--- |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（github-issue-sync.mdより移行） |
