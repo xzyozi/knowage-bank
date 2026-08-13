@@ -31,6 +31,59 @@ try:
 except Exception as e:
     logger.error(f"Failed to import sync-article-dates: {e}")
 
+def repair_truncated_json(json_str: str) -> str:
+    """途中で切れてしまったJSONを複数段階で修復してパース可能な状態にする"""
+    json_str = json_str.strip()
+    if not json_str:
+        return json_str
+    
+    # ステップ1: 末尾が不完全なキー定義（値がない "key": のみ）で終わっている場合に null を補完
+    # 例: ..."q": -> ..."q": null
+    import re as _re
+    # 末尾が `"key":` 形式で終わっている場合（値が欠損）
+    json_str = _re.sub(r'"([^"]+)"\s*:\s*$', r'"\1": null', json_str.rstrip())
+    
+    # ステップ2: 末尾が `,` で終わっている場合は除去（不完全なリストの末尾カンマ）
+    json_str = json_str.rstrip().rstrip(',')
+    
+    # ステップ3: 括弧とクォーテーションのスタック解析で不足している閉じ記号を追加
+    in_string = False
+    escaped = False
+    stack = []
+    i = 0
+    
+    while i < len(json_str):
+        char = json_str[i]
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == '"':
+            in_string = not in_string
+        elif not in_string:
+            if char in ('{', '['):
+                stack.append(char)
+            elif char in ('}', ']'):
+                if stack:
+                    top = stack[-1]
+                    if (char == '}' and top == '{') or (char == ']' and top == '['):
+                        stack.pop()
+        i += 1
+        
+    # 文字列が閉じられていない場合はダブルクォートを補完
+    if in_string:
+        json_str += '"'
+        
+    # 残っているスタックの括弧を逆順に閉じる
+    while stack:
+        top = stack.pop()
+        if top == '{':
+            json_str += '}'
+        elif top == '[':
+            json_str += ']'
+            
+    return json_str
+
 def sanitize_filename(title: str, number: int) -> str:
     """Issueタイトルから安全なファイル名を生成する。日本語の場合はissue-{number}.htmlにフォールバック"""
     # 英数字とハイフンだけを抽出
@@ -138,6 +191,7 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         # 3. リサーチ結果を元にした記事生成プロンプトの作成
         prompt = f"""
 以下のリサーチ結果およびGitHub Issueの内容に基づいて、技術質問ノートに掲載するための構造化JSONデータを生成してください。
+リサーチインプットから得られた具体的な技術詳細、設定手順、コードスニペット、仕様の比較などを極力網羅して、非常に情報量の多い充実した解説記事にしてください。
 
 【リサーチインプット】
 {research_text}
@@ -148,10 +202,22 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
 【Issueの本文】
 {body}
 
-【制約・仕様】
-- eyebrow（カテゴリ）: AI > 開発ワークフロー  (※内容に応じて既存の適切なカテゴリに変更してください)
-- title（記事タイトル）: {title}
-- 以下のJSONスキーマに従って、余計な解説テキストは省き、純粋なJSON（```json ... ``` の中身）のみを返してください。
+【情報網羅と構成の拡張ルール】
+1. **セクション構成の拡張**:
+   - `sections` リストには、リサーチ結果から判明した仕様、具体的な手順、他の技術やツールとの比較など、論点ごとに最低 **4つ以上** のセクション（`h2`）を記述してください。
+   - 各セクション（`h2`）には、さらに詳細な解説や個別手順、設定例などを整理するためのサブセクション（`h3`）を最低 **2つ以上** 設けてください。
+   - 各見出し（`h2`, `h3`）下の `paragraphs` リストには、1文だけの記述を避け、技術的根拠やメリット・デメリットを掘り下げて解説する段落（2〜3文程度）を最低 **2つ以上** 記述してください。
+2. **QA（質問と回答）の充実**:
+   - `qa` リストには、基本的な技術質問に加えて、「よくあるエラーや落とし穴」「トラブルシューティング」「実際の選定基準やパフォーマンス特性」に関する実用的なQAを最低 **4つ以上** 作成してください。
+3. **参考文献（references）の抽出**:
+   - 【リサーチインプット】の中に記載されている具体的なURL（Qiita、公式ドキュメント、GitHub等）や情報ソースがあれば、漏れなく `references` リストに抽出して記述してください。
+
+【JSON構造の完全性（崩壊の防止）】
+- 出力は必ず有効なJSONオブジェクトのみにしてください（前後に「以下が結果です」などの挨拶文は一切含めず、純粋に ```json ... ``` で囲んで出力してください）。
+- 各テキスト項目内の改行はエスケープされた `\n` を使用し、JSON自体の構造（括弧やカンマ）を壊さないようにしてください。
+- 文字列内にダブルクォーテーション `"` を記述する場合は必ず `\"` でエスケープしてください。キー名や構造用のダブルクォーテーションはそのままにしてください。
+- **出力トークンの上限に達しそうな場合は、最後のセクションや段落を短くしてでも、必ず JSON の閉じ括弧 `}}` まで出力してください。途中で切れた文字列を開いたまま終了するのは最も避けるべき状態です。**
+
 
 【JSONスキーマ】
 {{
@@ -160,31 +226,51 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
   "lead": "リード文（全体を要約した1段落、最大3文程度）",
   "qa": [
     {{
-      "q": "質問内容",
-      "a": "簡潔な回答"
+      "q": "具体的な質問内容1",
+      "a": "簡潔で技術的な回答1"
+    }},
+    {{
+      "q": "具体的な質問内容2",
+      "a": "簡潔で技術的な回答2"
+    }},
+    {{
+      "q": "具体的な質問内容3",
+      "a": "簡潔で技術的な回答3"
+    }},
+    {{
+      "q": "具体的な質問内容4",
+      "a": "簡潔で技術的な回答4"
     }}
   ],
   "sections": [
     {{
-      "h2": "見出し",
+      "h2": "主要なセクション見出し1",
       "paragraphs": [
-        "本文段落1...",
-        "本文段落2..."
+        "論点を詳しく解説する段落1...",
+        "論点を詳しく解説する段落2..."
       ],
       "subsections": [
         {{
-          "h3": "小見出し",
+          "h3": "サブセクション見出し1-1",
           "paragraphs": [
-            "サブ本文段落1..."
+            "より詳細な技術仕様や手順を詳しく解説する段落1...",
+            "より詳細な技術仕様や手順を詳しく解説する段落2..."
+          ]
+        }},
+        {{
+          "h3": "サブセクション見出し1-2",
+          "paragraphs": [
+            "関連する補足情報や設定例などを詳しく解説する段落1...",
+            "関連する補足情報や設定例などを詳しく解説する段落2..."
           ]
         }}
       ]
     }}
   ],
   "key_points": [
-    "要点1",
-    "要点2",
-    "要点3"
+    "リサーチを踏まえた重要ポイント1",
+    "リサーチを踏まえた重要ポイント2",
+    "リサーチを踏まえた重要ポイント3"
   ],
   "references": [
     {{
@@ -203,10 +289,14 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         
         logger.info("Requesting article generation from LocalLLM...")
         response = model.generate_response(history)
-        if not response or not response.content:
+        raw_content = response.content if (response and response.content) else None
+        if not raw_content and response and hasattr(response, "reasoning") and response.reasoning:
+            logger.info("LocalLLM content was empty, but reasoning content was found. Using reasoning content.")
+            raw_content = response.reasoning
+
+        if not raw_content:
             raise Exception("Empty response from LocalLLM")
             
-        raw_content = response.content
         json_content = raw_content.strip()
         
         # markdownコードブロックの抽出
@@ -216,7 +306,18 @@ async def process_single_issue(issue: dict, manager: IssueManager, git_commit_fl
         elif json_content.startswith("```"):
             json_content = re.sub(r"^```[a-zA-Z]*\n|```$", "", json_content).strip()
             
-        data = json.loads(json_content)
+        try:
+            data = json.loads(json_content)
+        except json.JSONDecodeError as je:
+            logger.warning(f"⚠️ JSON parsing failed on first attempt: {je}. Attempting cleanup and repair...")
+            try:
+                # 途中で切れたJSON（閉じ括弧欠損等）の修復
+                cleaned_content = repair_truncated_json(json_content)
+                data = json.loads(cleaned_content)
+                logger.info("✅ JSON parsing succeeded after cleanup and repair.")
+            except Exception as final_err:
+                logger.error(f"❌ JSON structure is corrupted: {final_err}\nRaw Content snippet (first 500 chars):\n{json_content[:500]}...\nRaw Content snippet (last 500 chars):\n{json_content[-500:] if len(json_content) > 500 else json_content}...")
+                raise je
         
         # HTML記事の構築と保存
         builder = ArticleBuilder()
