@@ -57,8 +57,22 @@ def _initialize_model() -> AbstractChatModel:
     logger.info(f"Using Ollama model based on configuration: {clean_model_name}")
     return OllamaModel(model_name=clean_model_name, base_url=base_url)
 
-# アプリケーション起動時にモデルを一度だけ初期化し、シングルトンとして提供
-chat_model_instance: AbstractChatModel = _initialize_model()
+_lazy_chat_model_instance: Optional[AbstractChatModel] = None
+
+def get_chat_model_instance() -> AbstractChatModel:
+    """設定に基づいて適切なチャットモデルのインスタンスを遅延初期化して返す"""
+    global _lazy_chat_model_instance
+    if _lazy_chat_model_instance is None:
+        _lazy_chat_model_instance = _initialize_model()
+    return _lazy_chat_model_instance
+
+class _LazyChatModelProxy(AbstractChatModel):
+    """インポート時の自動Ollama初期化を防ぎ、呼び出し時に初めて初期化するプロキシ"""
+    def get_response(self, prompt: str) -> str:
+        return get_chat_model_instance().get_response(prompt)
+
+# モジュールインポート時には即時初期化を行わず、遅延プロキシとして提供
+chat_model_instance: AbstractChatModel = _LazyChatModelProxy()
 
 class ChatModel:
     def __init__(self,
