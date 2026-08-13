@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from jinja2 import Template
 from app.utils.logger import logger
+from app.utils.markdown_parser import FlexibleMarkdownParser
 
 class ArticleBuilder:
     def __init__(self) -> None:
@@ -51,25 +52,33 @@ class ArticleBuilder:
         return input_eyebrow
 
     def build_article_html(self, data: dict) -> str:
-        """JSONデータからHTML文字列を生成する"""
+        """JSONデータまたは任意のMarkdownデータからHTML文字列を生成する"""
         t = Template(self.template_content)
         
-        # カテゴリ名の正規化
-        raw_eyebrow = data.get("eyebrow", "未分類")
+        # 自由形式の Markdown テキストが直接渡された場合
+        markdown_text = data.get("markdown_text") or data.get("markdown")
+        parsed_data = {}
+        if markdown_text:
+            parser = FlexibleMarkdownParser(markdown_text)
+            parsed_data = parser.parse()
+
+        # メタデータ・項目の統合
+        raw_eyebrow = data.get("eyebrow") or parsed_data.get("eyebrow", "未分類")
         normalized_eyebrow = self.normalize_eyebrow(raw_eyebrow)
         
         now = datetime.now()
         
         render_data = {
-            "title": data.get("title", "無題の記事"),
+            "title": data.get("title") or parsed_data.get("title", "無題の記事"),
             "eyebrow": normalized_eyebrow,
             "lead": data.get("lead", ""),
             "date_str": now.strftime("%Y-%m-%d"),
             "display_date": f"{now.year}年{now.month}月{now.day}日",
-            "qa": data.get("qa", []),
+            "qa": data.get("qa") or parsed_data.get("qa", []),
             "sections": data.get("sections", []),
-            "key_points": data.get("key_points", []),
-            "references": data.get("references", [])
+            "body_html": data.get("body_html") or parsed_data.get("body_html", ""),
+            "key_points": data.get("key_points") or parsed_data.get("key_points", []),
+            "references": data.get("references") or parsed_data.get("references", [])
         }
         
         return t.render(render_data)
