@@ -58,13 +58,21 @@ related_documents:
 ├── config/
 │   └── category_config.json    # カテゴリ・クラスタ定義（メタデータ）
 ├── docs/                       # 運用・仕様ドキュメント
-│   ├── homepage.md             # ホーム画面レイアウト運用ルール
-│   ├── architecture.md         # 本ファイル
-│   ├── article-spec.md         # 記事 HTML 仕様
-│   ├── css-spec.md             # スタイルシート仕様
-│   ├── index-generation-spec.md # index.html 生成仕様
-│   ├── localLLM_info.md        # ローカルLLM情報
-│   └── skill-spec.md           # Skill 動作仕様
+│   ├── KNB-BD-001_基本設計書.md                   # 本ファイル
+│   ├── KNB-DD-001_詳細設計書_GitHubIssue同期.md    # GitHub Issue同期・ローカル管理仕様
+│   ├── KNB-DD-002_詳細設計書_記事仕様.md             # 記事 HTML 仕様
+│   ├── KNB-DD-003_詳細設計書_インデックス生成仕様.md   # index.html 生成仕様
+│   ├── KNB-DD-004_詳細設計書_ホームページ仕様.md     # ホーム画面レイアウト仕様
+│   ├── KNB-DD-005_詳細設計書_CSS仕様.md            # スタイルシート仕様
+│   ├── KNB-DD-006_詳細設計書_Skill動作仕様.md        # Skill 動作仕様
+│   ├── KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md   # ローカルLLM・思考モデル運用仕様
+│   ├── KNB-DS-001_データ構造仕様書_永続化データスキーマ.md # 永続化データスキーマ仕様
+│   ├── TEMPLATE/               # 設計ドキュメントテンプレート・ガイドライン
+│   ├── setup/
+│   │   └── KNB-ENV-001_環境構築仕様書_プロジェクトセットアップ.md # 環境構築仕様書
+│   └── test/
+│       ├── KNB-TEST-001_テスト仕様書_単体テスト.md # 単体テスト仕様書
+│       └── KNB-TEST-002_テスト仕様書_結合テスト.md # 結合テスト仕様書
 ├── logs/
 │   └── llm_output.log          # ローカルLLMの生応答ログ
 ├── public/                     # 公開静的ファイルディレクトリ
