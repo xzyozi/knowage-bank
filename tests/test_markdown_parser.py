@@ -58,3 +58,43 @@ def hello():
     assert 'class="eyebrow">開発 > バックエンド' in html_output
     assert "<h2>導入</h2>" in html_output
     assert '<pre><code class="language-python">' in html_output
+
+def test_stage0_5_and_stage3_pipeline():
+    raw_md = """---
+title: "統計データ活用の実態調査"
+eyebrow: "AI > 統計"
+---
+
+## 調査概要
+
+政府統計データ [11, 20] や世論調査 [21] によると、活用の幅が広がっています。
+
+[11] e-Stat（政府統計ポータル）
+URL: https://www.e-stat.go.jp
+
+[20] 無関係な雑多な資料
+URL: https://example.com/junk
+
+[21] 外務省 世論調査
+URL: https://www.mofa.go.jp
+"""
+    builder = ArticleBuilder()
+    data = {
+        "markdown_text": raw_md,
+        "citations_keep": [11, 21],  # 20 は LLM により除外指定
+        "citation_labels": {
+            "11": "e-Stat ポータル",
+            "21": "外務省 2026年世論調査"
+        }
+    }
+    html_output = builder.build_article_html(data)
+
+    # 引用番号が 1, 2 にリナンバリングされているか確認
+    assert '<sup><a href="#ref-1">1</a>,<a href="#ref-2">2</a></sup>' in html_output or '<sup><a href="#ref-1">1</a></sup>' in html_output
+    # 20 番の除外確認
+    assert "example.com/junk" not in html_output
+    # アンカーおよびラベルの確認
+    assert '<li id="ref-1">' in html_output
+    assert '<a href="https://www.e-stat.go.jp" target="_blank" rel="noopener">e-Stat ポータル</a>' in html_output
+    assert '<li id="ref-2">' in html_output
+    assert '<a href="https://www.mofa.go.jp" target="_blank" rel="noopener">外務省 2026年世論調査</a>' in html_output

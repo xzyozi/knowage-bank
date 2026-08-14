@@ -4,6 +4,8 @@ from datetime import datetime
 from jinja2 import Template
 from app.utils.logger import logger
 from app.utils.markdown_parser import FlexibleMarkdownParser
+from app.utils.markdown_cleaner import parse_reference_footer
+from app.utils.citation_processor import apply_citations
 
 class ArticleBuilder:
     def __init__(self) -> None:
@@ -52,15 +54,30 @@ class ArticleBuilder:
         return input_eyebrow
 
     def build_article_html(self, data: dict) -> str:
-        """JSONデータまたは任意のMarkdownデータからHTML文字列を生成する"""
+        """JSONデータまたは任意のMarkdownデータからHTML文字列をパイプライン（Stage 0.5〜5）生成する"""
         t = Template(self.template_content)
         
         # 自由形式の Markdown テキストが直接渡された場合
-        markdown_text = data.get("markdown_text") or data.get("markdown")
+        raw_markdown = data.get("markdown_text") or data.get("markdown")
         parsed_data = {}
-        if markdown_text:
-            parser = FlexibleMarkdownParser(markdown_text)
+        raw_refs = {}
+        ref_list = []
+        body_html = data.get("body_html", "")
+
+        if raw_markdown:
+            # Stage 0.5: クレンジング & 参考文献フッターの分離
+            clean_body_md, raw_refs = parse_reference_footer(raw_markdown)
+            
+            # Stage 3a: Markdown -> HTML 基本変換
+            parser = FlexibleMarkdownParser(clean_body_md)
             parsed_data = parser.parse()
+            body_html = parsed_data.get("body_html", "")
+            
+            # Stage 3b: LLM等の citations_keep / citation_labels の適用とリナンバリング
+            citations_keep = data.get("citations_keep", [])
+            citation_labels = data.get("citation_labels", {})
+            
+            body_html, ref_list = apply_citations(body_html, raw_refs, citations_keep, citation_labels)
 
         # メタデータ・項目の統合
         raw_eyebrow = data.get("eyebrow") or parsed_data.get("eyebrow", "未分類")
@@ -76,9 +93,10 @@ class ArticleBuilder:
             "display_date": f"{now.year}年{now.month}月{now.day}日",
             "qa": data.get("qa") or parsed_data.get("qa", []),
             "sections": data.get("sections", []),
-            "body_html": data.get("body_html") or parsed_data.get("body_html", ""),
+            "body_html": body_html,
             "key_points": data.get("key_points") or parsed_data.get("key_points", []),
-            "references": data.get("references") or parsed_data.get("references", [])
+            "references": data.get("references") or parsed_data.get("references", []),
+            "ref_list": ref_list or data.get("ref_list", [])
         }
         
         return t.render(render_data)

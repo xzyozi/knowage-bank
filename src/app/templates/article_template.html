@@ -75,13 +75,24 @@
             </section>
             {% endif %}
 
-            <!-- ⑤ 参考資料セクション (存在する場合のみ) -->
-            {% if references and references|length > 0 %}
+            <!-- ⑤ 参考文献・参考資料セクション -->
+            {% if ref_list and ref_list|length > 0 %}
+            <section class="related" aria-label="参考文献">
+                <h2>参考文献</h2>
+                <ol>
+                    {% for ref in ref_list %}
+                    <li id="ref-{{ ref.n }}">
+                        <a href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </section>
+            {% elif references and references|length > 0 %}
             <section class="related" aria-label="参考資料">
                 <h2>参考資料</h2>
                 <ul>
                     {% for ref in references %}
-                    <li><a href="{{ ref.url }}" target="_blank">{{ ref.title }}</a></li>
+                    <li><a href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.title }}</a></li>
                     {% endfor %}
                 </ul>
             </section>
