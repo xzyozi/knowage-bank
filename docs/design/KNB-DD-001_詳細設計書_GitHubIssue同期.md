@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（GitHub Issue同期・ローカル管理仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-16"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "GitHubリポジトリからIssueを取得し、記事自動生成トリガー制御および処理状況のローカル管理仕様を定義するため"
 related_documents:
@@ -19,8 +19,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-001 |
 | ドキュメント名 | 詳細設計書（GitHub Issue同期・ローカル管理仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-16 |
 | 作成者 | 開発チーム |
 
