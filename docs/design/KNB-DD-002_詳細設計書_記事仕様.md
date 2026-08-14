@@ -337,8 +337,30 @@ graph TD
 
 ---
 
-## 16. 改訂履歴 (Change Log)
+## 16. 自由形式 Markdown 変換 & 引用リナンバリングパイプライン (Stage 0.5 〜 Stage 5)
+
+本システムは、任意の形式・自由な長さの Markdown から、既存 CSS (`site.css`) のスタイルを完全維持した静的 HTML への変換を以下の 5 ステージで実行する。
+
+### 16.1 ステージ構成と処理概要
+
+```mermaid
+flowchart TD
+    MDInput["Markdown入力"] --> S05["[Stage 0.5] クレンジング & 参考文献フッター分離<br>(parse_reference_footer)"]
+    S05 --> S2["[Stage 2] LLM メタデータ & 引用文脈選定<br>(eyebrow, tags, qa, citations_keep, citation_labels)"]
+    S2 --> S3["[Stage 3] 本文 HTML 変換 & 引用リナンバリング<br>(FlexibleMarkdownParser & apply_citations)"]
+    S3 --> S4["[Stage 4] Jinja2 組み立て<br>(article_template.html + ref_list)"]
+    S4 --> S5["[Stage 5] 保存 & アンカー整合性検証"]
+```
+
+### 16.2 引用アンカー & 参考文献仕様 (`ref_list`)
+- 本文中の引用番号 `[11, 20]` は出現順に新連番 (`1`, `2`...) へリナンバリングされ、`<sup><a href="#ref-N">N</a></sup>` 上付きリンクへ置換される。
+- 参考文献セクションは `.related` クラスの `<ol>` リストとして出力され、`<li id="ref-N">` アンカーにより双方向ジャンプを保証する。
+
+---
+
+## 17. 改訂履歴 (Change Log)
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（article-spec.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | 自由形式Markdown変換パーサー仕様、項目数制限の撤廃、Stage 0.5〜5 引用リナンバリング・アンカー連携仕様を追加 |
