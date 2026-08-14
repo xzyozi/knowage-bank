@@ -123,10 +123,10 @@ flowchart TD
 
 ```mermaid
 graph TD
-    IndexHTML["public/index.html"] -->|href="articles/*.html"| ArticleHTML["public/articles/<slug>.html"]
-    IndexHTML -->|href="styles/site.css"| SiteCSS["public/styles/site.css"]
-    ArticleHTML -->|href="../styles/site.css"| SiteCSS
-    ArticleHTML -->|src="../images/*.svg"| Images["public/images/*.svg"]
+    IndexHTML["public/index.html"] -->|href='articles/*.html'| ArticleHTML["public/articles/<slug>.html"]
+    IndexHTML -->|href='styles/site.css'| SiteCSS["public/styles/site.css"]
+    ArticleHTML -->|href='../styles/site.css'| SiteCSS
+    ArticleHTML -->|src='../images/*.svg'| Images["public/images/*.svg"]
 ```
 
 - `index.html` は `styles/site.css` を直接参照（同階層）
