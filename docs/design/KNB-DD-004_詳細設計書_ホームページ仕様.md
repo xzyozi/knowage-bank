@@ -26,7 +26,9 @@ related_documents:
 
 ---
 
-トップページ `public/index.html` は **手書きせず**、原則として `scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
+トップページ `public/index.html` は **手書きせず**、原則として `src/scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
+
+> **本書の位置づけ**: KNB-DD-003（インデックス生成仕様）がスクリプトの内部アルゴリズム・生成ロジックを定義するのに対し、本書はトップページの **UI/UX 観点でのレイアウト構成・表示ルール・運用手順** を補足する。ドメイン定義や並び順の技術的な詳細は KNB-DD-003 を正とする。
 
 ## 1. ファイルの役割
 
@@ -35,7 +37,7 @@ related_documents:
 | `public/index.html` | ホーム。記事一覧・カテゴリ・新着（スクリプト生成） |
 | `public/articles/*.html` | 各質問ノート本文 |
 | `public/styles/site.css` | 共通スタイル（新着カード・横長カード行など） |
-| `scripts/sync-article-dates.py` | 作成日同期・index 再生成 |
+| `src/scripts/sync-article-dates.py` | 作成日同期・index 再生成 |
 
 ## 2. ページ構成（上から順）
 

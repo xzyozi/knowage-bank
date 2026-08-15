@@ -87,11 +87,17 @@ related_documents:
 │   ├── app/
 │   │   ├── templates/
 │   │   │   └── article_template.html # 自動生成用Jinja2テンプレート
-│   │   ├── article_builder.py  # JSONデータからのHTMLビルド・カテゴリ正規化
+│   │   ├── utils/
+│   │   │   ├── markdown_parser.py  # 自由形式Markdown→HTML変換パーサー
+│   │   │   ├── markdown_cleaner.py # Stage 0.5: 参考文献フッター分離・クレンジング
+│   │   │   ├── citation_processor.py # Stage 3: 引用番号リナンバリング・アンカー生成
+│   │   │   └── logger.py          # ログ出力ユーティリティ
+│   │   ├── article_builder.py  # JSON/Markdownデータからの記事HTMLビルド・カテゴリ正規化
 │   │   ├── chatmodel.py        # ローカルLLM (Ollama) 接続ラッパー
 │   │   └── config.py           # 環境変数・パス設定
 │   └── scripts/
 │       ├── generate-article.py # JSONベース技術記事自動生成スクリプト
+│       ├── sync-github-issues.py # GitHub Issue同期・MCP連携・記事生成パイプライン
 │       └── sync-article-dates.py # 記事作成日同期・index.html再生成
 └── pyproject.toml              # プロジェクト設定と依存関係（jinja2等含む）
 ```
@@ -102,7 +108,14 @@ related_documents:
 flowchart TD
     User["ユーザー"] -->|質問テーマ指定| GenScript["src/scripts/generate-article.py"]
     GenScript --> LocalLLM["LocalLLM (Ollama Model)"]
-    LocalLLM -->|JSONで記事データ出力| Builder["src/app/article_builder.py"]
+    
+    LocalLLM -->|JSONで記事データ出力（従来方式）| Builder["src/app/article_builder.py"]
+    
+    IssueSync["src/scripts/sync-github-issues.py"] -->|Issue取得| MCP["Deep Research MCP"]
+    MCP -->|Markdown リサーチ結果| Stage05["Stage 0.5: クレンジング & 参考文献分離\n(markdown_cleaner.py)"]
+    Stage05 -->|clean_body_md + raw_refs| LLMMeta["Stage 2: LLM メタデータ選定\n(eyebrow, tags, qa, citations_keep)"]
+    LLMMeta --> Stage3["Stage 3: Markdown→HTML変換 & 引用リナンバリング\n(markdown_parser.py + citation_processor.py)"]
+    Stage3 --> Builder
     
     Builder -->|Jinja2レンダリング & カテゴリ補正| GenHTML["public/articles/<slug>.html を生成・保存"]
     Builder -->|生応答記録| LLMLog["logs/llm_output.log"]

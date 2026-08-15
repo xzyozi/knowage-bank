@@ -9,6 +9,7 @@ purpose: "本システム内で物理保存されるデータ構造、JSONスキ
 related_documents:
   - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-001_詳細設計書_GitHubIssue同期.md"
+  - "KNB-DD-002_詳細設計書_記事仕様.md"
   - "KNB-DD-003_詳細設計書_インデックス生成仕様.md"
 ---
 

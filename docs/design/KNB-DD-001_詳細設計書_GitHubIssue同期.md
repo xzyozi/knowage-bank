@@ -10,6 +10,7 @@ related_documents:
   - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-002_詳細設計書_記事仕様.md"
   - "KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md"
+  - "KNB-DS-001_データ構造仕様書_永続化データスキーマ.md"
 ---
 
 # 詳細設計書（GitHub Issue同期・ローカル管理仕様）
@@ -143,7 +144,7 @@ MCPサーバーとのSSE接続には以下の環境変数を使用する。
    - `sse_client` で接続を確立し、`run_deep_research` ツールを実行。
    - ネットワーク遮断やサーバー未起動などの理由でMCP接続に失敗、または処理タイムアウト（1800秒）が発生した場合は、リサーチ結果を空としてフォールバック処理を実行するか、もしくはエラーとしてステータスを `failed` にする。
 3. **最終記事の構造化JSONおよび自由形式Markdownパイプライン変換**:
-   - 得られたリサーチ結果テキストをコンテキストに含め、メタデータ（`eyebrow`, `tags`, `qa`, `citations_keep`, `citation_labels`）の選定と自由形式 Markdown から `site.css` 適合 HTML への安全な変換パイプライン（Stage 0.5 〜 5）を実行する。
+   - 得られたリサーチ結果テキストをコンテキストに含め、メタデータ（`eyebrow`, `tags`, `qa`, `citations_keep`, `citation_labels`）の選定と自由形式 Markdown から `site.css` 適合 HTML への安全な変換パイプライン（Stage 0.5 〜 5）を実行する（→ 詳細は KNB-DD-002 §16 を参照）。
 
 ---
 

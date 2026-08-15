@@ -86,26 +86,34 @@ related_documents:
 
 ---
 
-## 3. 実装アーキテクチャ (Jinja2 + JSON 構造化出力)
+## 3. 実装アーキテクチャ (Jinja2 + JSON/Markdown ハイブリッド構造化出力)
 
-「Jinja2テンプレートによるHTML出力保証 ＋ LLMには構造化JSONのみを出力させる」という方式を採用している。
+「Jinja2テンプレートによるHTML出力保証 ＋ LLMには構造化JSONのみを出力させる」従来方式に加え、自由形式 Markdown からの Stage 0.5〜5 パイプライン変換方式（→ 詳細は KNB-DD-002 §16 を参照）をサポートしている。
 
 ```mermaid
 flowchart TD
     User["ユーザー / Issue (質問テーマ)"] --> MCP["Deep Research (MCP) / リサーチ実行"]
-    MCP --> MidData["中間成果物 (JSON / テキスト要約)"]
-    MidData --> LocalLLM["ローカルLLM (ChatModel wrapper)<br>・JSONのみを出力 (Title, Lead, QA, Sections)"]
-    LocalLLM --> Builder["article_builder.py (Jinja2)<br>・HTMLテンプレートにデータを注入<br>・カテゴリ表記ゆれ補正"]
+    MCP --> MidData["中間成果物 (Markdown リサーチ結果)"]
+    
+    MidData --> Stage05["Stage 0.5: クレンジング & 参考文献フッター分離\n(markdown_cleaner.py)"]
+    Stage05 --> LLMMeta["Stage 2: LLM メタデータ選定\n(eyebrow, tags, qa, citations_keep)"]
+    LLMMeta --> Stage3["Stage 3: Markdown→HTML変換 & 引用リナンバリング\n(markdown_parser.py + citation_processor.py)"]
+    Stage3 --> Builder["article_builder.py (Jinja2)\n・HTMLテンプレートにデータを注入\n・カテゴリ表記ゆれ補正"]
+    
+    User --> LegacyPath["従来方式: LLM → JSON出力"]
+    LegacyPath --> Builder
+    
     Builder --> SaveHTML["public/articles/<slug>.html 保存"]
 ```
 
 ### コンポーネント役割
 
 1. **`src/scripts/generate-article.py` / `sync-github-issues.py`**
-   - ローカルLLM（Ollama上の `gemma4-12b` や `qwen2.5` 等）に対し、JSONデータを要求。
+   - ローカルLLM（Ollama上の `gemma4-12b` や `qwen2.5` 等）に対し、JSONデータまたはメタデータ選定結果を要求。
    - LLMから得られた生応答を `logs/llm_output.log` へ自動保存。
 2. **`src/app/article_builder.py`**
-   - JSONデータを読み取り、Jinja2テンプレート (`article_template.html`) に流し込み静的HTMLをビルド。
+   - **従来方式**: JSONデータを読み取り、Jinja2テンプレート (`article_template.html`) に流し込み静的HTMLをビルド。
+   - **Markdown パイプライン方式**: `parse_reference_footer`（Stage 0.5）→ `FlexibleMarkdownParser`（Stage 3a）→ `apply_citations`（Stage 3b）を経由して `site.css` 適合 HTML を生成。
    - **カテゴリ表記ゆれ補正**: 不完全なカテゴリ名を `category_config.json` の正式名称へマッピング補正。
 
 ---
