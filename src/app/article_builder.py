@@ -72,12 +72,13 @@ class ArticleBuilder:
             parser = FlexibleMarkdownParser(clean_body_md)
             parsed_data = parser.parse()
             body_html = parsed_data.get("body_html", "")
+            raw_lead = data.get("lead") or parsed_data.get("lead", "")
             
             # Stage 3b: LLM等の citations_keep / citation_labels の適用とリナンバリング
             citations_keep = data.get("citations_keep", [])
             citation_labels = data.get("citation_labels", {})
             
-            body_html, ref_list = apply_citations(body_html, raw_refs, citations_keep, citation_labels)
+            body_html, lead_text, ref_list = apply_citations(body_html, raw_refs, citations_keep, citation_labels, raw_lead)
 
         # メタデータ・項目の統合
         raw_eyebrow = data.get("eyebrow") or parsed_data.get("eyebrow", "未分類")
@@ -88,7 +89,7 @@ class ArticleBuilder:
         render_data = {
             "title": data.get("title") or parsed_data.get("title", "無題の記事"),
             "eyebrow": normalized_eyebrow,
-            "lead": data.get("lead", ""),
+            "lead": lead_text or data.get("lead") or parsed_data.get("lead", ""),
             "date_str": now.strftime("%Y-%m-%d"),
             "display_date": f"{now.year}年{now.month}月{now.day}日",
             "qa": data.get("qa") or parsed_data.get("qa", []),

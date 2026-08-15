@@ -16,17 +16,19 @@ def apply_citations(
     body_html: str,
     raw_refs: Dict[int, Dict[str, str]],
     citations_keep: List[int],
-    citation_labels: Dict[Any, str]
-) -> Tuple[str, List[Dict[str, Any]]]:
+    citation_labels: Dict[Any, str],
+    lead_text: str = ""
+) -> Tuple[str, str, List[Dict[str, Any]]]:
     """
-    Stage 3: 本文中の引用番号をリナンバリング (1, 2, 3...) して <sup><a href="#ref-N">N</a></sup> に置換し、
+    Stage 3: 本文およびリード文中の引用番号をリナンバリング (1, 2, 3...) して <sup><a href="#ref-N">N</a></sup> に置換し、
     新番号順の参考文献リスト (ref_list) を生成する。
     """
     if not raw_refs:
-        return body_html, []
+        return body_html, lead_text, []
 
-    # 1. 本文中の出現順で新番号を確定（1, 2, 3...）
-    appearance_order = extract_citation_order(body_html)
+    # 1. 本文およびリード文中の出現順で新番号を確定（1, 2, 3...）
+    combined_text = lead_text + "\n" + body_html
+    appearance_order = extract_citation_order(combined_text)
     
     # citations_keep が指定されている場合はフィルタリング。無指定の場合は出現順全てを対象
     if citations_keep:
@@ -42,7 +44,7 @@ def apply_citations(
             old_to_new[old] = new_counter
             new_counter += 1
 
-    # 2. 本文の [11, 20] パターンを <sup><a href="#ref-N">N</a></sup> に置換
+    # 2. [11, 20] パターンを <sup><a href="#ref-N">N</a></sup> に置換
     def replace_bracket(match):
         nums = [int(n.strip()) for n in match.group(1).split(',') if n.strip().isdigit()]
         kept = [old_to_new[n] for n in nums if n in old_to_new]
@@ -52,6 +54,7 @@ def apply_citations(
         return f'<sup>{links}</sup>'
 
     transformed_html = re.sub(r'\[(\d+(?:,\s*\d+)*)\]', replace_bracket, body_html)
+    transformed_lead = re.sub(r'\[(\d+(?:,\s*\d+)*)\]', replace_bracket, lead_text)
 
     # 3. 参考文献リスト構築（新番号順）
     ref_list = []
@@ -63,4 +66,4 @@ def apply_citations(
             "url": raw_refs[old]['url']
         })
 
-    return transformed_html, ref_list
+    return transformed_html, transformed_lead, ref_list

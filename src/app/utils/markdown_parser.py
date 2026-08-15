@@ -32,26 +32,72 @@ class FlexibleMarkdownParser:
                         else:
                             metadata[key] = val
 
-        # タイトルが本文の1行目 # 見出しにある場合のフォールバック
-        if "title" not in metadata or not metadata["title"]:
-            title_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
-            if title_match:
-                metadata["title"] = title_match.group(1).strip()
-                body = re.sub(r"^#\s+.+$\n?", "", body, count=1, flags=re.MULTILINE).strip()
+        # 本文冒頭の # 見出し（H1）の処理・クレンジング
+        h1_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+        if h1_match:
+            if "title" not in metadata or not metadata["title"]:
+                metadata["title"] = h1_match.group(1).strip()
+            # 本文から # 見出し行をクレンジング除去
+            body = re.sub(r"^#\s+.+$\n?", "", body, count=1, flags=re.MULTILINE).strip()
 
         return metadata, body
 
-    def _extract_qa_blocks(self, text: str) -> List[Dict[str, str]]:
-        """Q&A 形式のブロックを検出・抽出"""
+    def _extract_key_points(self, text: str) -> Tuple[List[str], str]:
+        """## 要点 / まとめ セクションを検出・抽出し、key_points リストを返却"""
+        key_points = []
+        kp_pattern = r"^##\s*(?:要点|まとめ|Key Points)\s*$\n((?:[-*+]\s+.*\n?)+)"
+        kp_match = re.search(kp_pattern, text, re.MULTILINE | re.IGNORECASE)
+        
+        clean_text = text
+        if kp_match:
+            lines = kp_match.group(1).strip().splitlines()
+            for line in lines:
+                line_str = re.sub(r"^[-*+]\s+", "", line.strip())
+                if line_str:
+                    key_points.append(line_str)
+            clean_text = re.sub(kp_pattern, "", text, flags=re.MULTILINE | re.IGNORECASE).strip()
+            
+        return key_points, clean_text
+
+    def _extract_lead(self, text: str) -> Tuple[str, str]:
+        """本文先頭の最初の段落をリード文 (lead) として抽出"""
+        lines = text.strip().splitlines()
+        lead_lines = []
+        body_lines = []
+        in_lead = True
+        
+        for line in lines:
+            stripped = line.strip()
+            if in_lead:
+                if stripped.startswith("#") or stripped.startswith("- ") or stripped.startswith("* "):
+                    in_lead = False
+                    body_lines.append(line)
+                elif not stripped:
+                    if lead_lines:
+                        in_lead = False
+                else:
+                    lead_lines.append(stripped)
+            else:
+                body_lines.append(line)
+                
+        lead_text = " ".join(lead_lines)
+        return lead_text, "\n".join(body_lines).strip()
+
+    def _extract_qa_blocks(self, text: str) -> Tuple[List[Dict[str, str]], str]:
+        """Q&A 形式のブロックを検出・抽出、および本文からの除去"""
         qa_list = []
-        # Q: ... A: ... パターンまたは Q&A 見出し下の項目
-        qa_matches = re.findall(r"(?:Q|質問)[:：]\s*(.*?)\n+(?:A|回答)[:：]\s*(.*?)(?=\n(?:Q|質問)[:：]|\n##|\Z)", text, re.DOTALL | re.IGNORECASE)
-        for q, a in qa_matches:
-            qa_list.append({
-                "q": q.strip().replace("\n", " "),
-                "a": a.strip().replace("\n", " ")
-            })
-        return qa_list
+        qa_pattern = r"(?:Q|質問)[:：]\s*(.*?)\n+(?:A|回答)[:：]\s*(.*?)(?=\n\n|\n#|\Z)"
+        qa_matches = list(re.finditer(qa_pattern, text, re.DOTALL | re.IGNORECASE))
+        
+        for m in qa_matches:
+            q = m.group(1).strip().replace("\n", " ")
+            a = m.group(2).strip().replace("\n", " ")
+            qa_list.append({"q": q, "a": a})
+        
+        # 本文からの除去
+        clean_text = re.sub(qa_pattern, "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+        
+        return qa_list, clean_text
 
     def _extract_references(self, text: str) -> List[Dict[str, str]]:
         """参考資料・リンクブロックの抽出"""
@@ -176,16 +222,29 @@ class FlexibleMarkdownParser:
 
     def parse(self) -> Dict[str, Any]:
         """パース完了オブジェクトを返却"""
-        qa = self._extract_qa_blocks(self.body_text)
-        refs = self._extract_references(self.body_text)
-        body_html = self.convert_markdown_to_html(self.body_text)
+        qa, body_after_qa = self._extract_qa_blocks(self.body_text)
+        key_points, body_after_kp = self._extract_key_points(body_after_qa)
+        
+        # lead が Frontmatter にない場合、本文先頭段落から自動抽出
+        lead = self.metadata.get("lead", "")
+        if not lead:
+            extracted_lead, remaining_body = self._extract_lead(body_after_kp)
+            lead = extracted_lead
+            body_final = remaining_body
+        else:
+            body_final = body_after_kp
+
+        refs = self._extract_references(body_final)
+        body_html = self.convert_markdown_to_html(body_final)
 
         return {
             "title": self.metadata.get("title", "無題の記事"),
             "eyebrow": self.metadata.get("eyebrow", "技術ノート"),
+            "lead": lead,
             "tags": self.metadata.get("tags", []),
             "created_at": self.metadata.get("created_at"),
             "qa": qa,
+            "key_points": key_points,
             "references": refs,
             "body_html": body_html,
             "raw_metadata": self.metadata,
