@@ -37,7 +37,7 @@ class FlexibleMarkdownParser:
         if h1_match:
             if "title" not in metadata or not metadata["title"]:
                 metadata["title"] = h1_match.group(1).strip()
-            # 本文から # 見出し行をクレンジング除去
+            # 本文冒頭付近の第1位の # 見出し行をクレンジング除去（タイトルとの二重化防止）
             body = re.sub(r"^#\s+.+$\n?", "", body, count=1, flags=re.MULTILINE).strip()
 
         return metadata, body
@@ -69,7 +69,7 @@ class FlexibleMarkdownParser:
         for line in lines:
             stripped = line.strip()
             if in_lead:
-                if stripped.startswith("#") or stripped.startswith("- ") or stripped.startswith("* "):
+                if stripped.startswith("#") or stripped.startswith("- ") or stripped.startswith("* ") or re.match(r"^\d+\.", stripped):
                     in_lead = False
                     body_lines.append(line)
                 elif not stripped:
@@ -185,10 +185,11 @@ class FlexibleMarkdownParser:
                 html_lines.extend(close_lists_and_table())
                 continue
 
-            # 見出し H2
-            if stripped.startswith("## "):
+            # 見出し H1 / H2
+            if stripped.startswith("# ") or stripped.startswith("## "):
                 html_lines.extend(close_lists_and_table())
-                h2_text = self._inline_markdown_to_html(stripped[3:].strip())
+                prefix_len = 2 if stripped.startswith("# ") else 3
+                h2_text = self._inline_markdown_to_html(stripped[prefix_len:].strip())
                 html_lines.append(f"<h2>{h2_text}</h2>")
                 continue
 
