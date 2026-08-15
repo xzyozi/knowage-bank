@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（index.html 生成仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "scripts/sync-article-dates.py によって生成・更新される public/index.html の構造仕様および自動ビルドスクリプトの動作設計を定義するため"
 related_documents:
@@ -21,8 +21,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-003 |
 | ドキュメント名 | 詳細設計書（index.html 生成仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -272,4 +272,5 @@ flowchart TD
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（index-generation-spec.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：スクリプト実行パスをsrc/scripts/に統一、§4にKNB-DS-001正本スキーマへの参照およびKNB-DD-005への相互参照を追加 |

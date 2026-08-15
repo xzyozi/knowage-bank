@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（ローカルLLM運用・Deep Research連携仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "ローカルLLM（Ollama環境等）および Deep Research MCP パイプラインにおけるアーキテクチャ、評価基準、2段階ハイブリッド連携仕様、エラー修復ロジックを明記するため"
 related_documents:
@@ -20,8 +20,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-007 |
 | ドキュメント名 | 詳細設計書（ローカルLLM運用・Deep Research連携仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -160,4 +160,5 @@ Deep Research MCP を使用して調査を行う際、検索・探索の意図�
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（localLLM_info.mdおよびlocalLLM_info_add.mdを統合・改訂） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：§3のフロー図をMarkdownパイプライン対応に更新、article_builder.pyの最新モジュール連携説明を追加 |
