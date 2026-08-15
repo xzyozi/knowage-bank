@@ -126,9 +126,11 @@ class FlexibleMarkdownParser:
         code_lines = []
         in_ul = False
         in_ol = False
+        in_table = False
+        table_rows = []
 
-        def close_lists():
-            nonlocal in_ul, in_ol
+        def close_lists_and_table():
+            nonlocal in_ul, in_ol, in_table, table_rows
             res = []
             if in_ul:
                 res.append("</ul>")
@@ -136,6 +138,10 @@ class FlexibleMarkdownParser:
             if in_ol:
                 res.append("</ol>")
                 in_ol = False
+            if in_table and table_rows:
+                res.append(self._render_table_html(table_rows))
+                in_table = False
+                table_rows = []
             return res
 
         for line in lines:
@@ -146,14 +152,16 @@ class FlexibleMarkdownParser:
                 if in_code_block:
                     # コードブロック終了
                     code_content = "\n".join(code_lines)
-                    # HTML エスケープ
-                    code_content = code_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    lang_class = f' class="language-{code_lang}"' if code_lang else ""
-                    html_lines.append(f'<pre><code{lang_class}>{code_content}</code></pre>')
+                    if code_lang == "mermaid":
+                        html_lines.append(f'<div class="mermaid">\n{code_content}\n</div>')
+                    else:
+                        code_content = code_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        lang_class = f' class="language-{code_lang}"' if code_lang else ""
+                        html_lines.append(f'<pre><code{lang_class}>{code_content}</code></pre>')
                     in_code_block = False
                     code_lines = []
                 else:
-                    html_lines.extend(close_lists())
+                    html_lines.extend(close_lists_and_table())
                     in_code_block = True
                     code_lang = stripped[3:].strip()
                 continue
@@ -162,21 +170,31 @@ class FlexibleMarkdownParser:
                 code_lines.append(line)
                 continue
 
+            # テーブル (Pipe Table) の判定
+            if stripped.startswith("|") and stripped.endswith("|"):
+                if not in_table:
+                    html_lines.extend(close_lists_and_table())
+                    in_table = True
+                table_rows.append(stripped)
+                continue
+            elif in_table:
+                html_lines.extend(close_lists_and_table())
+
             # 空行
             if not stripped:
-                html_lines.extend(close_lists())
+                html_lines.extend(close_lists_and_table())
                 continue
 
             # 見出し H2
             if stripped.startswith("## "):
-                html_lines.extend(close_lists())
+                html_lines.extend(close_lists_and_table())
                 h2_text = self._inline_markdown_to_html(stripped[3:].strip())
                 html_lines.append(f"<h2>{h2_text}</h2>")
                 continue
 
             # 見出し H3
             if stripped.startswith("### "):
-                html_lines.extend(close_lists())
+                html_lines.extend(close_lists_and_table())
                 h3_text = self._inline_markdown_to_html(stripped[4:].strip())
                 html_lines.append(f"<h3>{h3_text}</h3>")
                 continue
@@ -184,7 +202,7 @@ class FlexibleMarkdownParser:
             # 箇条書き (ul)
             if stripped.startswith("- ") or stripped.startswith("* "):
                 if not in_ul:
-                    html_lines.extend(close_lists())
+                    html_lines.extend(close_lists_and_table())
                     html_lines.append("<ul>")
                     in_ul = True
                 li_text = self._inline_markdown_to_html(stripped[2:].strip())
@@ -195,7 +213,7 @@ class FlexibleMarkdownParser:
             ol_match = re.match(r"^\d+\.\s+(.+)$", stripped)
             if ol_match:
                 if not in_ol:
-                    html_lines.extend(close_lists())
+                    html_lines.extend(close_lists_and_table())
                     html_lines.append("<ol>")
                     in_ol = True
                 li_text = self._inline_markdown_to_html(ol_match.group(1).strip())
@@ -203,12 +221,50 @@ class FlexibleMarkdownParser:
                 continue
 
             # リスト終了後の通常の段落
-            html_lines.extend(close_lists())
+            html_lines.extend(close_lists_and_table())
             p_text = self._inline_markdown_to_html(stripped)
             html_lines.append(f"<p>{p_text}</p>")
 
-        html_lines.extend(close_lists())
+        html_lines.extend(close_lists_and_table())
         return "\n".join(html_lines)
+
+    def _render_table_html(self, rows: List[str]) -> str:
+        """Markdown Pipe Table 行を site.css 適合の <table class="figure"> へレンダリング"""
+        if not rows:
+            return ""
+
+        table_html = ['<table class="figure">']
+        
+        def parse_row_cells(row_str: str) -> List[str]:
+            cells = [c.strip() for c in row_str.strip("|").split("|")]
+            return cells
+
+        # ヘッダー行
+        header_cells = parse_row_cells(rows[0])
+        table_html.append("  <thead>")
+        table_html.append("    <tr>")
+        for cell in header_cells:
+            cell_html = self._inline_markdown_to_html(cell)
+            table_html.append(f'      <th scope="col">{cell_html}</th>')
+        table_html.append("    </tr>")
+        table_html.append("  </thead>")
+
+        # データ行
+        table_html.append("  <tbody>")
+        for row in rows[1:]:
+            # 区切り行 | :--- | :--- | のスキップ
+            if re.match(r"^\s*\|?\s*:?-+:?\s*\|", row):
+                continue
+            cells = parse_row_cells(row)
+            table_html.append("    <tr>")
+            for cell in cells:
+                cell_html = self._inline_markdown_to_html(cell)
+                table_html.append(f"      <td>{cell_html}</td>")
+            table_html.append("    </tr>")
+        table_html.append("  </tbody>")
+        table_html.append("</table>")
+
+        return "\n".join(table_html)
 
     def _inline_markdown_to_html(self, text: str) -> str:
         """インラインの Markdown (強調、リンク、コード) を HTML 化"""

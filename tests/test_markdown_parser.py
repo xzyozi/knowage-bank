@@ -98,3 +98,26 @@ URL: https://www.mofa.go.jp
     assert '<a href="https://www.e-stat.go.jp" target="_blank" rel="noopener">e-Stat ポータル</a>' in html_output
     assert '<li id="ref-2">' in html_output
     assert '<a href="https://www.mofa.go.jp" target="_blank" rel="noopener">外務省 2026年世論調査</a>' in html_output
+
+def test_pipe_table_and_mermaid_parsing():
+    md_text = """
+## 表のテスト
+
+| パターン | 利点 | 用途 |
+| :--- | :--- | :--- |
+| **線形** | 高速 | 定型処理 |
+| **グラフ** | 柔軟 | 複雑なフロー |
+
+```mermaid
+graph TD
+    A --> B
+```
+"""
+    parser = FlexibleMarkdownParser(md_text)
+    data = parser.parse()
+    
+    assert '<table class="figure">' in data["body_html"]
+    assert '<th scope="col">パターン</th>' in data["body_html"]
+    assert '<td><strong>線形</strong></td>' in data["body_html"]
+    assert '<div class="mermaid">' in data["body_html"]
+    assert 'A --> B' in data["body_html"]
