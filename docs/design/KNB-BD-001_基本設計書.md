@@ -1,9 +1,9 @@
 ---
 title: "基本設計書（システム全体アーキテクチャ定義）"
 document_type: "basic_design"
-version: "1.0"
+version: "1.2"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "「技術質問ノート」サイト全体のシステム構成、データフロー、コンポーネント間の依存関係を明記し、開発・改修時の設計ブレを防ぐため"
 related_documents:
@@ -14,6 +14,7 @@ related_documents:
   - "KNB-DD-005_詳細設計書_CSS仕様.md"
   - "KNB-DD-006_詳細設計書_Skill動作仕様.md"
   - "KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md"
+  - "KNB-DS-001_データ構造仕様書_永続化データスキーマ.md"
 ---
 
 # 基本設計書（システム全体アーキテクチャ定義）
@@ -23,8 +24,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-BD-001 |
 | ドキュメント名 | 基本設計書（システム全体アーキテクチャ定義） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.2 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -86,11 +87,17 @@ related_documents:
 │   ├── app/
 │   │   ├── templates/
 │   │   │   └── article_template.html # 自動生成用Jinja2テンプレート
-│   │   ├── article_builder.py  # JSONデータからのHTMLビルド・カテゴリ正規化
+│   │   ├── utils/
+│   │   │   ├── markdown_parser.py  # 自由形式Markdown→HTML変換パーサー
+│   │   │   ├── markdown_cleaner.py # Stage 0.5: 参考文献フッター分離・クレンジング
+│   │   │   ├── citation_processor.py # Stage 3: 引用番号リナンバリング・アンカー生成
+│   │   │   └── logger.py          # ログ出力ユーティリティ
+│   │   ├── article_builder.py  # JSON/Markdownデータからの記事HTMLビルド・カテゴリ正規化
 │   │   ├── chatmodel.py        # ローカルLLM (Ollama) 接続ラッパー
 │   │   └── config.py           # 環境変数・パス設定
 │   └── scripts/
 │       ├── generate-article.py # JSONベース技術記事自動生成スクリプト
+│       ├── sync-github-issues.py # GitHub Issue同期・MCP連携・記事生成パイプライン
 │       └── sync-article-dates.py # 記事作成日同期・index.html再生成
 └── pyproject.toml              # プロジェクト設定と依存関係（jinja2等含む）
 ```
@@ -101,7 +108,14 @@ related_documents:
 flowchart TD
     User["ユーザー"] -->|質問テーマ指定| GenScript["src/scripts/generate-article.py"]
     GenScript --> LocalLLM["LocalLLM (Ollama Model)"]
-    LocalLLM -->|JSONで記事データ出力| Builder["src/app/article_builder.py"]
+    
+    LocalLLM -->|JSONで記事データ出力（従来方式）| Builder["src/app/article_builder.py"]
+    
+    IssueSync["src/scripts/sync-github-issues.py"] -->|Issue取得| MCP["Deep Research MCP"]
+    MCP -->|Markdown リサーチ結果| Stage05["Stage 0.5: クレンジング & 参考文献分離\n(markdown_cleaner.py)"]
+    Stage05 -->|clean_body_md + raw_refs| LLMMeta["Stage 2: LLM メタデータ選定\n(eyebrow, tags, qa, citations_keep)"]
+    LLMMeta --> Stage3["Stage 3: Markdown→HTML変換 & 引用リナンバリング\n(markdown_parser.py + citation_processor.py)"]
+    Stage3 --> Builder
     
     Builder -->|Jinja2レンダリング & カテゴリ補正| GenHTML["public/articles/<slug>.html を生成・保存"]
     Builder -->|生応答記録| LLMLog["logs/llm_output.log"]
@@ -123,10 +137,10 @@ flowchart TD
 
 ```mermaid
 graph TD
-    IndexHTML["public/index.html"] -->|href="articles/*.html"| ArticleHTML["public/articles/<slug>.html"]
-    IndexHTML -->|href="styles/site.css"| SiteCSS["public/styles/site.css"]
-    ArticleHTML -->|href="../styles/site.css"| SiteCSS
-    ArticleHTML -->|src="../images/*.svg"| Images["public/images/*.svg"]
+    IndexHTML["public/index.html"] -->|href='articles/*.html'| ArticleHTML["public/articles/<slug>.html"]
+    IndexHTML -->|href='styles/site.css'| SiteCSS["public/styles/site.css"]
+    ArticleHTML -->|href='../styles/site.css'| SiteCSS
+    ArticleHTML -->|src='../images/*.svg'| Images["public/images/*.svg"]
 ```
 
 - `index.html` は `styles/site.css` を直接参照（同階層）
@@ -207,4 +221,6 @@ graph TD
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（architecture.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | 自由形式Markdown変換アーキテクチャおよびStage 0.5〜5引用アンカー自動連携仕様を追加 |
+| Rev.1.2 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：データフロー図をMarkdown/JSONハイブリッド対応に更新、ディレクトリ構造にutilsモジュール群を追記 |

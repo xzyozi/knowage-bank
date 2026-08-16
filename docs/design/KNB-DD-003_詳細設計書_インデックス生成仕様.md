@@ -1,15 +1,17 @@
 ---
 title: "詳細設計書（index.html 生成仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "scripts/sync-article-dates.py によって生成・更新される public/index.html の構造仕様および自動ビルドスクリプトの動作設計を定義するため"
 related_documents:
   - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-002_詳細設計書_記事仕様.md"
   - "KNB-DD-004_詳細設計書_ホームページ仕様.md"
+  - "KNB-DD-005_詳細設計書_CSS仕様.md"
+  - "KNB-DS-001_データ構造仕様書_永続化データスキーマ.md"
 ---
 
 # 詳細設計書（index.html 生成仕様）
@@ -19,8 +21,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-003 |
 | ドキュメント名 | 詳細設計書（index.html 生成仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -33,7 +35,7 @@ related_documents:
 | 項目     | 値                                               |
 | -------- | ------------------------------------------------ |
 | 生成対象 | `public/index.html`（public直下）                 |
-| 生成主体 | `scripts/sync-article-dates.py`                  |
+| 生成主体 | `src/scripts/sync-article-dates.py`                  |
 | 入力     | `public/articles/*.html` + Git ログ + スクリプト内定数  |
 | 副作用   | 各 `public/articles/*.html` の `<time datetime>` も更新 |
 | 手編集   | 原則禁止（次回スクリプト実行で上書きされる）     |
@@ -65,7 +67,7 @@ related_documents:
 
 ## 4. クラスタ（サブカテゴリ）定義
 
-外部設定ファイル `config/category_config.json` で管理する。
+外部設定ファイル `config/category_config.json` で管理する（→ JSON スキーマの正本定義は KNB-DS-001 §2.3 を参照）。
 
 | クラスタID           | ドメイン | eyebrow パス                 | h3 見出し                                            |
 | -------------------- | -------- | ---------------------------- | ---------------------------------------------------- |
@@ -197,7 +199,7 @@ def get_creation_date(filepath):
 ### コマンド
 
 ```bash
-python3 scripts/sync-article-dates.py
+python3 src/scripts/sync-article-dates.py
 ```
 
 ### 前提条件
@@ -270,4 +272,5 @@ flowchart TD
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（index-generation-spec.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：スクリプト実行パスをsrc/scripts/に統一、§4にKNB-DS-001正本スキーマへの参照およびKNB-DD-005への相互参照を追加 |

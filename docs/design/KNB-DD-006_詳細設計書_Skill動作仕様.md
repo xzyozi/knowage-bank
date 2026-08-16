@@ -1,15 +1,16 @@
 ---
 title: "詳細設計書（AI Skill 動作仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: ".codex/skills/ 配下に定義された AI Skill の発火条件、処理フロー、入出力、制約をプログラム仕様書の粒度で定義するため"
 related_documents:
   - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-001_詳細設計書_GitHubIssue同期.md"
   - "KNB-DD-002_詳細設計書_記事仕様.md"
+  - "KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md"
 ---
 
 # 詳細設計書（AI Skill 動作仕様）
@@ -19,8 +20,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-006 |
 | ドキュメント名 | 詳細設計書（AI Skill 動作仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -69,6 +70,8 @@ flowchart TD
     P3A --> P4["Phase 4: 検証<br>・rg でファイル / リンク / 画像パス確認<br>・見出し階層 & 一次情報リンクの正しさ確認"]
     P3B --> P4
 ```
+
+> **パイプライン方式の選択**: Phase 3A での記事HTML構成は、`article_builder.py` の `build_article_html()` を経由する。従来の構造化 JSON 方式（`sections` キー）と、自由形式 Markdown パイプライン方式（`markdown_text` キー、→ KNB-DD-002 §16 参照）のいずれかを入力に応じて自動選択する。Skill の実行可能性評価については KNB-DD-007 §1-2 を参照。
 
 ### 2.4 入力仕様
 
@@ -287,4 +290,5 @@ flowchart TD
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（skill-spec.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：§2.3にMarkdownパイプライン連携の注記追加、KNB-DD-007への相互参照を追加 |

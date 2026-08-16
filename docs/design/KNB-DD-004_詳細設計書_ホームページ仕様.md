@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（ホームページレイアウト・表示仕様）"
 document_type: "detailed_design"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-08-15"
 author: "開発チーム"
 purpose: "トップページ (public/index.html) のレイアウト構造、表示コンポーネント仕様、および運用ルールをプログラム仕様の粒度で定義するため"
 related_documents:
@@ -19,14 +19,16 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-004 |
 | ドキュメント名 | 詳細設計書（ホームページレイアウト・表示仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
+| 版数 | Rev.1.1 |
+| 改訂日 | 2026-08-15 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
 ---
 
-トップページ `public/index.html` は **手書きせず**、原則として `scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
+トップページ `public/index.html` は **手書きせず**、原則として `src/scripts/sync-article-dates.py` の生成結果を正とします。カテゴリ分けはフォルダではなく UI のみで行います。
+
+> **本書の位置づけ**: KNB-DD-003（インデックス生成仕様）がスクリプトの内部アルゴリズム・生成ロジックを定義するのに対し、本書はトップページの **UI/UX 観点でのレイアウト構成・表示ルール・運用手順** を補足する。ドメイン定義や並び順の技術的な詳細は KNB-DD-003 を正とする。
 
 ## 1. ファイルの役割
 
@@ -35,7 +37,7 @@ related_documents:
 | `public/index.html` | ホーム。記事一覧・カテゴリ・新着（スクリプト生成） |
 | `public/articles/*.html` | 各質問ノート本文 |
 | `public/styles/site.css` | 共通スタイル（新着カード・横長カード行など） |
-| `scripts/sync-article-dates.py` | 作成日同期・index 再生成 |
+| `src/scripts/sync-article-dates.py` | 作成日同期・index 再生成 |
 
 ## 2. ページ構成（上から順）
 
@@ -127,4 +129,5 @@ python3 src/scripts/sync-article-dates.py
 
 | 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
 | :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（homepage.mdより移行） |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
+| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：スクリプト実行パスをsrc/scripts/に統一、冒頭にKNB-DD-003との補足・位置づけ定義を追加 |
