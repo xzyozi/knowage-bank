@@ -26,7 +26,8 @@
                 <p class="lead">{{ lead }}</p>
             </header>
 
-            <!-- ② 簡潔なQ&Aセクション -->
+            <!-- ② 簡潔なQ&Aセクション (存在する場合のみ) -->
+            {% if qa and qa|length > 0 %}
             <section class="qa" aria-labelledby="quick-answer">
                 <h2 id="quick-answer">簡潔なQ&amp;A</h2>
                 <dl>
@@ -36,8 +37,14 @@
                     {% endfor %}
                 </dl>
             </section>
+            {% endif %}
 
-            <!-- ③ 本文セクション群 -->
+            <!-- ③ 本文セクション (自由形式 body_html または 構造化 sections) -->
+            {% if body_html %}
+            <div class="article-body">
+                {{ body_html | safe }}
+            </div>
+            {% elif sections %}
             {% for sec in sections %}
             <h2>{{ sec.h2 }}</h2>
             {% for para in sec.paragraphs %}
@@ -53,8 +60,10 @@
             {% endfor %}
             {% endif %}
             {% endfor %}
+            {% endif %}
 
-            <!-- ④ 要点セクション -->
+            <!-- ④ 要点セクション (存在する場合のみ) -->
+            {% if key_points and key_points|length > 0 %}
             <section class="note">
                 <h2>要点</h2>
                 <p>この記事の要点は以下の通りです。</p>
@@ -64,16 +73,30 @@
                     {% endfor %}
                 </ul>
             </section>
+            {% endif %}
 
-            <!-- ⑤ 参考資料セクション -->
+            <!-- ⑤ 参考文献・参考資料セクション -->
+            {% if ref_list and ref_list|length > 0 %}
+            <section class="related" aria-label="参考文献">
+                <h2>参考文献</h2>
+                <ol>
+                    {% for ref in ref_list %}
+                    <li id="ref-{{ ref.n }}">
+                        <a href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.label }}</a>
+                    </li>
+                    {% endfor %}
+                </ol>
+            </section>
+            {% elif references and references|length > 0 %}
             <section class="related" aria-label="参考資料">
                 <h2>参考資料</h2>
                 <ul>
                     {% for ref in references %}
-                    <li><a href="{{ ref.url }}" target="_blank">{{ ref.title }}</a></li>
+                    <li><a href="{{ ref.url }}" target="_blank" rel="noopener">{{ ref.title }}</a></li>
                     {% endfor %}
                 </ul>
             </section>
+            {% endif %}
 
             <!-- ⑥ 関連ナビゲーション -->
             <nav class="related" aria-label="関連リンク">

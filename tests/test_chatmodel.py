@@ -1,6 +1,7 @@
 import pytest
 from app.chatmodel import chat_model_instance, ChatModel
 
+@pytest.mark.ollama
 def test_ollama_singleton_connection():
     """シングルトンの chat_model_instance を使った Ollama 疎通テスト"""
     try:
@@ -11,6 +12,7 @@ def test_ollama_singleton_connection():
     except Exception as e:
         pytest.fail(f"Ollama connection via singleton failed: {e}")
 
+@pytest.mark.ollama
 def test_chat_model_class_connection():
     """ChatModel クラスのインスタンス生成と疎通テスト"""
     try:

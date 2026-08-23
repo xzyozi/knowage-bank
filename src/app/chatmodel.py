@@ -46,7 +46,7 @@ class OllamaModel(AbstractChatModel):
 
 def _initialize_model() -> AbstractChatModel:
     """設定に基づいて適切なチャットモデルのインスタンスを返すファクトリ関数"""
-    model_name = config.KNOWLEGE_BANK_MODEL
+    model_name = config.KNOWAGE_BANK_MODEL
     base_url = config.OLLAMA_BASE_URL
     
     # ollama/ プレフィックスがあれば除去
@@ -57,8 +57,22 @@ def _initialize_model() -> AbstractChatModel:
     logger.info(f"Using Ollama model based on configuration: {clean_model_name}")
     return OllamaModel(model_name=clean_model_name, base_url=base_url)
 
-# アプリケーション起動時にモデルを一度だけ初期化し、シングルトンとして提供
-chat_model_instance: AbstractChatModel = _initialize_model()
+_lazy_chat_model_instance: Optional[AbstractChatModel] = None
+
+def get_chat_model_instance() -> AbstractChatModel:
+    """設定に基づいて適切なチャットモデルのインスタンスを遅延初期化して返す"""
+    global _lazy_chat_model_instance
+    if _lazy_chat_model_instance is None:
+        _lazy_chat_model_instance = _initialize_model()
+    return _lazy_chat_model_instance
+
+class _LazyChatModelProxy(AbstractChatModel):
+    """インポート時の自動Ollama初期化を防ぎ、呼び出し時に初めて初期化するプロキシ"""
+    def get_response(self, prompt: str) -> str:
+        return get_chat_model_instance().get_response(prompt)
+
+# モジュールインポート時には即時初期化を行わず、遅延プロキシとして提供
+chat_model_instance: AbstractChatModel = _LazyChatModelProxy()
 
 class ChatModel:
     def __init__(self,
@@ -68,7 +82,7 @@ class ChatModel:
                  site_url: str = "",
                  site_name: str = ""
                  ) -> None:
-        raw_model = model_name or config.KNOWLEGE_BANK_MODEL
+        raw_model = model_name or config.KNOWAGE_BANK_MODEL
         
         # ollama/ プレフィックスのハンドリング
         self.model_name = raw_model
@@ -112,6 +126,14 @@ class ChatModel:
         max_retries = 3
         retry_wait_seconds = 15
 
+        # Ollama用のコンテキスト制限拡張設定を extra_body に差し込む
+        extra_body_params = dict(self.extra_body)
+        if "options" not in extra_body_params:
+            extra_body_params["options"] = {
+                "num_ctx": 8192,
+                "num_predict": 4096
+            }
+
         api_params = {
             "model": self.model_name,
             "messages": history.get("messages", []),
@@ -121,8 +143,9 @@ class ChatModel:
             "presence_penalty": 0.3,
             "n": 1,
             "stream": False,
+            "max_tokens": 4096,  # 構成拡張による出力の長文化に対応
             "extra_headers": self.extra_headers,
-            "extra_body": self.extra_body,
+            "extra_body": extra_body_params,
         }
 
         # ツールが明示的に渡された場合のみ、パラメータに追加
