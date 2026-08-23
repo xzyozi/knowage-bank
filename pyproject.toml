@@ -48,7 +48,7 @@ ignore = []
 
 [tool.ruff.lint.isort]
 # 自分のプロジェクトのパッケージ名を指定（自動ソート時にローカルパッケージとして認識させるため）
-known-first-party = ["src", "app"]
+known-first-party = ["src", "app", "personal_knowledge"]
 
 # ==========================================
 # Type Checker (Mypy)
