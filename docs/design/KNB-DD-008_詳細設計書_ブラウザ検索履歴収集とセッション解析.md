@@ -1,11 +1,11 @@
 ---
 title: "詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）"
 document_type: "detailed_design"
-version: "1.1"
+version: "1.2"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
-purpose: "Chromium/Firefoxからの非同期検索履歴抽出、5分以内重複排除、30分セッション分割、Jaccard/Overlap類似度によるIssueルーティングおよびBaseIssueClient(GitHub/ローカルストレージ)の具象仕様を定義するため"
+purpose: "Chromium/Firefoxからの非同期検索履歴抽出、5分以内重複排除、30分セッション分割/Gemini Embeddingコサイン類似度クラスタリング、意図判定LLMフィルタ、Jaccard/Overlap類似度によるIssueルーティングおよびBaseIssueClientの具象仕様を定義するため"
 related_documents:
   - "KNB-BD-002_基本設計書_パーソナルナレッジ自動生成.md"
   - "KNB-DS-002_データ構造仕様書_パーソナルナレッジデータスキーマ.md"
@@ -18,7 +18,7 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-DD-008 |
 | ドキュメント名 | 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様） |
-| 版数 | Rev.1.1 (Issueクライアント分離・ローカルストレージ仕様の反映) |
+| 版数 | Rev.1.2 (Gemini API 意図判定フィルタリング＆埋め込みクラスタリング仕様の反映) |
 | 改訂日 | 2026-08-25 |
 | 作成日 | 2026-08-23 |
 | 作成者 | 開発チーム |
@@ -30,7 +30,10 @@ related_documents:
 本ドキュメントは、パーソナル・ナレッジ自動生成システムにおいて以下の具象モジュール仕様を規定する。
 
 1. **データアクセス層 (DAO)**: Chrome, Edge, Firefox からの安全なSQLite読み込みと検索クエリ抽出
-2. **ビジネスロジック層 (Domain)**: 時系列5分以内重複排除、30分セッション分割（一括まとめ・クラスタリング）、単発検索（1件のみ）の破棄
+2. **ビジネスロジック層 (Domain)**:
+   - 時系列5分以内重複排除 (`SessionDeduplicator`)
+   - クエリ意図判定フィルタ (`IntentFilter`: ブラックリスト＋Gemini API `gemini-1.5-flash` LLM判定)
+   - 30分セッション分割 (`SessionAnalyzer`) および ベクトル埋め込みクラスタリング (`SemanticClusterer`: `text-embedding-004`＋コサイン類似度)
 3. **連携層 (Integration)**: Jaccard / Szymkiewicz-Simpson Overlap 係数に基づく Open Issue へのルーティング、および `BaseIssueClient`（GitHub REST API / ローカルJSONストレージ）抽象化
 
 ---
@@ -45,7 +48,8 @@ sequenceDiagram
     participant ChromiumDAO as ChromiumHistoryDAO (Chrome/Edge)
     participant FirefoxDAO as FirefoxHistoryDAO (Firefox)
     participant Deduplicator as SessionDeduplicator
-    participant Analyzer as SessionAnalyzer
+    participant Filter as IntentFilter (Blacklist / Gemini API)
+    participant Analyzer as SemanticClusterer / SessionAnalyzer
     participant Router as IssueRouter
     participant Client as BaseIssueClient (GitHubIssueClient / LocalFileIssueClient)
 
@@ -59,8 +63,14 @@ sequenceDiagram
     Note over Deduplicator: 時系列ソート & 5分以内同一キーワード結合<br>(ブラウザ識別子マージ)
     Deduplicator -->> Aggregator: list[SearchEntry] (重複排除済)
 
-    Aggregator ->> Analyzer: analyze_sessions(deduped_entries)
-    Note over Analyzer: 30分間隔でセッション分割 (一括まとめ)<br>クエリ1件のみの単発セッションを破棄
+    loop 各 SearchEntry ごと
+        Aggregator ->> Filter: is_knowledge_query(keyword)
+        Note over Filter: 1. ブラックリスト判定 (天気, ナビ, 娯楽等)<br>2. Gemini API (gemini-1.5-flash) True/False 判定
+        Filter -->> Aggregator: is_valid (bool)
+    end
+
+    Aggregator ->> Analyzer: process_entries(knowledge_entries)
+    Note over Analyzer: ベクトル埋め込み (text-embedding-004) + コサイン類似度<br>または30分ルールベースで一括まとめ (セッション化)
     Analyzer -->> Aggregator: list[SearchSession] (有効セッション群)
 
     Aggregator ->> Client: get_open_issues()
@@ -102,7 +112,7 @@ class SearchEntry:
 
 @dataclass
 class SearchSession:
-    """30分以内の連続検索で構成されるセッションDTO"""
+    """30分以内の連続検索または意味的クラスタで構成されるセッションDTO"""
     start_time: datetime
     end_time: datetime
     queries: list[str]
@@ -156,13 +166,20 @@ FIREFOX_PROFILES_DIR = Path(os.environ.get("APPDATA", "")) / "Mozilla/Firefox/Pr
   3. 一致した場合、直前のエントリにマージ（`source_browser` が異なればカンマ区切り等で結合、タイムスタンプは最新または開始時を保持）。
 * **出力**: 重複排除された `list[SearchEntry]`
 
-#### ② セッション解析モジュール (`Analyzer`) —— 検索の一括まとめ・クラスタリング
-* **入力**: 重複排除済み `list[SearchEntry]`
+#### ② 意図判定フィルタリング (`_is_knowledge_query`)
+* **目的**: 天気予報、乗換案内、ログイン、動画鑑賞等の日常消費・ナビゲーション検索を除外し、知識習得・技術解決目的のクエリのみを抽出する。
 * **手順**:
-  1. 時系列順に走査し、直前のクエリとの時間間隔が **30分（1,800秒）以内** であれば同一セッションに追加（クラスタリング）。
-  2. 30分を超えた場合、現在のセッションをクローズし新規セッションを開始。
-  3. **ノイズ除去**: クエリ数が **1件のみ** の単発検索はノイズとみなし破棄（`len(session.queries) >= 2` のみ残す）。
-* **出力**: `list[SearchSession]`
+  1. **ブラックリスト判定**: 設定ファイル (`config.json`) の `filtering.blacklisted_keywords` (`["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]`) に部分一致する場合は即座に `False` を返却。
+  2. **LLM意図判定**: Google Gemini API (`gemini-1.5-flash` または `gemini-2.5-flash`) を呼び出し、システムプロンプトに従って `True` / `False` を出力させる。
+     - システムプロンプト例:
+       > 「提示された検索クエリが『知識の習得、概念の理解、単語の意味の調査、技術的な問題解決』を目的としている場合は 'True' を出力してください。単なるサイトへの移動、エンタメの消費、日常タスクが目的である場合は 'False' を出力してください。」
+
+#### ③ セッション解析・クラスタリング (`Analyzer` / `SemanticClusterer`)
+* **ルールベース方式 (`SessionAnalyzer`)**:
+  - 時系列順に走査し、直前のクエリとの時間間隔が **30分（1,800秒）以内** であれば同一セッションに追加。クエリ数が1件のみの単発検索はノイズとみなし破棄。
+* **ベクトル埋め込み方式 (`SemanticClusterer`)**:
+  - Google Gemini API (`models/text-embedding-004`, 768次元, `task_type="clustering"`) で各クエリをベクトル化。
+  - セッションの代表クエリ（最初のクエリ）のベクトルとコサイン類似度 ($\text{similarity} \ge 0.70$) を計算し、閾値以上であれば該当セッションに統合、未満であれば新規セッションを作成。
 
 ---
 
@@ -214,8 +231,7 @@ class BaseIssueClient(ABC):
 | 発生レイヤー | 想定異常事象 | 処置 |
 | :--- | :--- | :--- |
 | **DAO層** | ブラウザ起動中によるDBロック | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ |
-| **DAO層** | Firefox プロファイルディレクトリ不存在 | インストールなしとみなし安全にスキップ |
-| **Domain層** | タイムスタンプ欠損 / 不正文字列 | 当該レコードのみスキップして処理継続 |
+| **Domain層** | Gemini API 意図判定/埋め込みエラー | エラーログを出力し、安全なデフォルト（意図判定は False、埋め込みはゼロベクトル）を返却 |
 | **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期 |
 
 ---
@@ -224,14 +240,12 @@ class BaseIssueClient(ABC):
 
 1. **DAO層テスト (`test_personal_knowledge_dao.py`)**:
    - SQLiteモックファイルを作成し、WebKit時間/PRTimeの変換、URLからのクエリ抽出を検証。
-   - ファイル不在・コピー失敗時のサイレント動作（例外送出せず空リスト返却）を検証。
-2. **重複排除・セッション解析テスト (`test_personal_knowledge_domain.py`)**:
-   - 5分以内の同一キーワード結合、30分以内のグループ化、1件のみ単発検索の破棄を検証。
+2. **重複排除・意図判定・クラスタリングテスト (`test_personal_knowledge_domain.py`)**:
+   - 5分以内の同一キーワード結合、ブラックリスト＆LLMモック判定、コサイン類似度によるセッション分割を検証。
 3. **Issueクライアントテスト (`test_local_file_client.py`)**:
    - `LocalFileIssueClient` のメモリ動作および JSON ファイルへのデータ読み書き・永続化を検証。
 4. **ルーティングテスト (`test_personal_knowledge_router.py` / `test_personal_knowledge_service.py`)**:
    - 語彙トークナイズおよび Overlap / Jaccard 類似度計算の検証。
-   - `PersonalKnowledgeService` と `GitHubIssueClient` / `LocalFileIssueClient` のパイプライン結合テスト。
 
 ---
 
@@ -241,3 +255,4 @@ class BaseIssueClient(ABC):
 | :--- | :--- | :--- | :--- |
 | Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（ブラウザ履歴収集・セッション解析・Issueルーティング詳細設計初版制定） |
 | Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映 |
+| Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
