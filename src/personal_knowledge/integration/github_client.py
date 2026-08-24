@@ -6,10 +6,12 @@ from typing import Any
 
 import httpx
 
+from personal_knowledge.integration.base_issue_client import BaseIssueClient
+
 logger = logging.getLogger(__name__)
 
 
-class GitHubIssueClient:
+class GitHubIssueClient(BaseIssueClient):
     """GitHub API を通じて Issue の取得・起票・コメント追記を行うクライアントクラス。"""
 
     def __init__(
