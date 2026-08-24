@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from dotenv import load_dotenv
 
+from personal_knowledge.integration.github_client import GitHubIssueClient
+from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
 
 load_dotenv()
@@ -31,17 +33,31 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="GitHub への起票やコメント追記を行わず、抽出・ルーティング判定結果のみを表示する",
+        help="Issue への起票やコメント追記を行わず、抽出・ルーティング判定結果のみを表示する",
     )
     parser.add_argument(
         "--json-output",
         action="store_true",
         help="実行結果を JSON 形式で標準出力に出力する",
     )
+    parser.add_argument(
+        "--backend",
+        choices=["github", "local"],
+        default=None,
+        help="保存先ストレージバックエンド ('github' または 'local')。未指定の場合は環境変数から自動判定。",
+    )
     args = parser.parse_args()
 
-    service = PersonalKnowledgeService()
-    logger.info("Starting Personal Knowledge Collection & Routing pipeline...")
+    issue_client = None
+    if args.backend == "github":
+        issue_client = GitHubIssueClient()
+    elif args.backend == "local":
+        issue_client = LocalFileIssueClient()
+
+    service = PersonalKnowledgeService(issue_client=issue_client)
+    logger.info(
+        f"Starting Personal Knowledge Collection & Routing pipeline (backend: {service.issue_client.__class__.__name__})..."
+    )
     result = service.run_pipeline(dry_run=args.dry_run)
 
     summary = {

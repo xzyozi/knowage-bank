@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from personal_knowledge.dao.base_dao import BrowserHistoryDAO
 from personal_knowledge.domain.models import SearchEntry
 from personal_knowledge.integration.github_client import GitHubIssueClient
+from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
 
 
@@ -36,7 +37,6 @@ class MockDAO(BrowserHistoryDAO):
 
 def test_personal_knowledge_service_pipeline_end_to_end() -> None:
     """複数ブラウザの履歴収集から重複排除、セッション抽出、Issue起票・コメント追記までパイプラインが正しく自律動作すること。"""
-    # Chrome からのログ
     chrome_entries = [
         SearchEntry(
             timestamp=datetime(2026, 8, 23, 10, 0, 0, tzinfo=timezone.utc),
@@ -50,14 +50,12 @@ def test_personal_knowledge_service_pipeline_end_to_end() -> None:
         ),
     ]
 
-    # Edge からのログ (1分後の同一クエリ -> 重複排除されるべき)
     edge_entries = [
         SearchEntry(
             timestamp=datetime(2026, 8, 23, 10, 1, 0, tzinfo=timezone.utc),
             keyword="langchain  prompt template ",
             source_browser="edge",
         ),
-        # 別の調査セッション (13:00)
         SearchEntry(
             timestamp=datetime(2026, 8, 23, 13, 0, 0, tzinfo=timezone.utc),
             keyword="FastAPI BackgroundTasks",
@@ -70,7 +68,6 @@ def test_personal_knowledge_service_pipeline_end_to_end() -> None:
         ),
     ]
 
-    # Firefox からの単発ログ (15:00) -> 単発のためセッション化されず破棄されるべき
     firefox_entries = [
         SearchEntry(
             timestamp=datetime(2026, 8, 23, 15, 0, 0, tzinfo=timezone.utc),
@@ -85,13 +82,11 @@ def test_personal_knowledge_service_pipeline_end_to_end() -> None:
         MockDAO("firefox", firefox_entries),
     ]
 
-    # モック GitHub クライアント
     mock_github = MagicMock(spec=GitHubIssueClient)
     mock_github.is_configured = True
     mock_github.create_issue.return_value = 101
     mock_github.add_comment.return_value = True
 
-    # 既存の Open Issue（FastAPI 関連の Issue がすでに存在）
     existing_open_issues: list[dict[str, Any]] = [
         {
             "number": 50,
@@ -108,20 +103,38 @@ def test_personal_knowledge_service_pipeline_end_to_end() -> None:
 
     result = service.run_pipeline(dry_run=False, mock_open_issues=existing_open_issues)
 
-    # 1. 収集生ログ: 2 (Chrome) + 3 (Edge) + 1 (Firefox) = 6件
     assert result.raw_entries_count == 6
-
-    # 2. 5分以内同一キーワードマージ後: 5件 (Edge の 10:01 が Chrome の 10:00 とマージ)
     assert result.deduped_entries_count == 5
-
-    # 3. 30分セッション分割 & 単発破棄後: 2セッション (LangChainセッション & FastAPIセッション)
     assert result.sessions_count == 2
-
-    # 4. ルーティング結果
-    # - LangChainセッション -> 類似Issueなし -> create_issue 呼び出し
-    # - FastAPIセッション -> Issue #50 と類似 -> add_comment 呼び出し
     assert result.created_issues_count == 1
     assert result.added_comments_count == 1
 
     mock_github.create_issue.assert_called_once()
     mock_github.add_comment.assert_called_once_with(50, result.decisions[1].body)
+
+
+def test_personal_knowledge_service_with_local_file_client() -> None:
+    """LocalFileIssueClient を使用したパイプライン実行テスト。"""
+    entries = [
+        SearchEntry(
+            timestamp=datetime(2026, 8, 23, 10, 0, 0, tzinfo=timezone.utc),
+            keyword="pytest fixture scope",
+            source_browser="chrome",
+        ),
+        SearchEntry(
+            timestamp=datetime(2026, 8, 23, 10, 5, 0, tzinfo=timezone.utc),
+            keyword="pytest monkeypatch env vars",
+            source_browser="chrome",
+        ),
+    ]
+    mock_daos: list[BrowserHistoryDAO] = [MockDAO("chrome", entries)]
+
+    local_client = LocalFileIssueClient(storage_path="")
+    service = PersonalKnowledgeService(daos=mock_daos, issue_client=local_client)
+
+    result = service.run_pipeline(dry_run=False)
+
+    assert result.sessions_count == 1
+    assert result.created_issues_count == 1
+    assert len(local_client.get_open_issues()) == 1
+    assert "pytest fixture scope" in local_client.get_open_issues()[0]["body"]
