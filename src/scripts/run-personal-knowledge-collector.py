@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from dotenv import load_dotenv
 
+from personal_knowledge.domain.intent_filter import IntentFilter
+from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
 from personal_knowledge.integration.github_client import GitHubIssueClient
 from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
@@ -46,6 +48,16 @@ def main() -> None:
         default=None,
         help="保存先ストレージバックエンド ('github' または 'local')。未指定の場合は環境変数から自動判定。",
     )
+    parser.add_argument(
+        "--use-gemini",
+        action="store_true",
+        help=(
+            "Gemini API による意図判定フィルタ (IntentFilter) および Embeddingベースの"
+            "意味的クラスタリング (SemanticClusterer) を有効化する。"
+            "未指定の場合はルールベース (ブラックリストなし・30分間隔セッション分割) のみで動作する。"
+            "GEMINI_API_KEY 環境変数の設定が必要。"
+        ),
+    )
     args = parser.parse_args()
 
     issue_client = None
@@ -54,9 +66,17 @@ def main() -> None:
     elif args.backend == "local":
         issue_client = LocalFileIssueClient()
 
-    service = PersonalKnowledgeService(issue_client=issue_client)
+    intent_filter = IntentFilter() if args.use_gemini else None
+    semantic_clusterer = SemanticClusterer() if args.use_gemini else None
+
+    service = PersonalKnowledgeService(
+        issue_client=issue_client,
+        intent_filter=intent_filter,
+        semantic_clusterer=semantic_clusterer,
+    )
     logger.info(
-        f"Starting Personal Knowledge Collection & Routing pipeline (backend: {service.issue_client.__class__.__name__})..."
+        "Starting Personal Knowledge Collection & Routing pipeline "
+        f"(backend: {service.issue_client.__class__.__name__})..."
     )
     result = service.run_pipeline(dry_run=args.dry_run)
 

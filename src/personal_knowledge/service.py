@@ -10,7 +10,9 @@ from personal_knowledge.dao.chromium_dao import ChromiumHistoryDAO
 from personal_knowledge.dao.firefox_dao import FirefoxHistoryDAO
 from personal_knowledge.domain.analyzer import SessionAnalyzer
 from personal_knowledge.domain.deduplicator import SessionDeduplicator
+from personal_knowledge.domain.intent_filter import IntentFilter
 from personal_knowledge.domain.models import SearchEntry, SearchSession
+from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
 from personal_knowledge.integration.base_issue_client import BaseIssueClient
 from personal_knowledge.integration.github_client import GitHubIssueClient
 from personal_knowledge.integration.issue_router import IssueRouter, RoutingDecision
@@ -51,6 +53,8 @@ class PersonalKnowledgeService:
         router: IssueRouter | None = None,
         issue_client: BaseIssueClient | None = None,
         github_client: BaseIssueClient | None = None,
+        intent_filter: IntentFilter | None = None,
+        semantic_clusterer: SemanticClusterer | None = None,
     ) -> None:
         """PersonalKnowledgeService を初期化する。
 
@@ -59,8 +63,15 @@ class PersonalKnowledgeService:
             deduplicator: 重複排除モジュール。None の場合はデフォルト設定を使用。
             analyzer: セッション解析モジュール。None の場合はデフォルト設定を使用。
             router: ルーティング判定モジュール。None の場合はデフォルト設定を使用。
-            issue_client: Issue/ナレッジ格納クライアント。None の場合は環境変数に応じて GitHubIssueClient または LocalFileIssueClient を選択。
+            issue_client: Issue/ナレッジ格納クライアント。None の場合は環境変数に応じて
+                GitHubIssueClient または LocalFileIssueClient を選択。
             github_client: 旧互換用エイリアス。issue_client が未指定の場合に使用。
+            intent_filter: 意図判定フィルタ (Gemini API 連携)。None の場合は無効化され、
+                ブラックリスト/LLM判定を行わずルールベースのセッション分割のみで処理する
+                (既定動作。Gemini API 利用にはオプトインでインスタンスを渡す)。
+            semantic_clusterer: Embeddingベースのセッションクラスタリングモジュール。
+                None の場合は無効化され、`analyzer` によるルールベース (30分間隔) の
+                セッション分割を使用する (既定動作)。
         """
         self.daos = daos or [
             ChromiumHistoryDAO(browser_type="chrome"),
@@ -70,6 +81,9 @@ class PersonalKnowledgeService:
         self.deduplicator = deduplicator or SessionDeduplicator(time_window_seconds=300)
         self.analyzer = analyzer or SessionAnalyzer(session_gap_seconds=1800, min_queries=2)
         self.router = router or IssueRouter(similarity_threshold=0.3)
+        # Gemini API連携はオプトイン: 未指定時はルールベース処理のみで動作する
+        self.intent_filter = intent_filter
+        self.semantic_clusterer = semantic_clusterer
 
         client = issue_client or github_client
         if client is None:
@@ -98,7 +112,13 @@ class PersonalKnowledgeService:
     def process_entries_to_sessions(
         self, raw_entries: list[SearchEntry]
     ) -> tuple[list[SearchEntry], list[SearchSession]]:
-        """生エントリから重複排除およびセッション分割を実行する。
+        """生エントリから重複排除・意図判定フィルタ・セッション分割を実行する。
+
+        `intent_filter` が設定されている場合は、重複排除後のエントリに対して
+        知識探求意図のフィルタリングを行う (ブラックリスト + Gemini API LLM判定)。
+        `semantic_clusterer` が設定されている場合は、Embeddingベースの意味的
+        クラスタリングを使用する。いずれも未設定の場合は、フィルタリングをスキップし
+        ルールベース (`SessionAnalyzer`) でのセッション分割のみを行う (既定動作)。
 
         Args:
             raw_entries: 生検索エントリ一覧。
@@ -107,7 +127,16 @@ class PersonalKnowledgeService:
             tuple[list[SearchEntry], list[SearchSession]]: (重複排除済みエントリ, 抽出セッション群)。
         """
         deduped = self.deduplicator.deduplicate(raw_entries)
-        sessions = self.analyzer.analyze_sessions(deduped)
+
+        filtered = deduped
+        if self.intent_filter is not None:
+            filtered = [e for e in deduped if self.intent_filter.is_knowledge_query(e.keyword)]
+
+        if self.semantic_clusterer is not None:
+            sessions = self.semantic_clusterer.process_entries(filtered)
+        else:
+            sessions = self.analyzer.analyze_sessions(filtered)
+
         return deduped, sessions
 
     def run_pipeline(
