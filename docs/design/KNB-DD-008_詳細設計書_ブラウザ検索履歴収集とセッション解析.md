@@ -1,7 +1,7 @@
 ---
 title: "詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）"
 document_type: "detailed_design"
-version: "1.2"
+version: "1.3"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -14,18 +14,20 @@ related_documents:
 # 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）
 **検索履歴収集(DAO)・重複排除/セッション解析(Domain)・Issueルーティング(Integration)仕様**
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 文書番号 | KNB-DD-008 |
+| 項目           | 内容                                                                      |
+| :------------- | :------------------------------------------------------------------------ |
+| 文書番号       | KNB-DD-008                                                                |
 | ドキュメント名 | 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様） |
-| 版数 | Rev.1.2 (Gemini API 意図判定フィルタリング＆埋め込みクラスタリング仕様の反映) |
-| 改訂日 | 2026-08-25 |
-| 作成日 | 2026-08-23 |
-| 作成者 | 開発チーム |
+| 版数           | Rev.1.3 (DTO・インターフェースのコード直貼りをテーブル形式に変更)         |
+| 改訂日         | 2026-08-25                                                                |
+| 作成日         | 2026-08-23                                                                |
+| 作成者         | 開発チーム                                                                |
 
 ---
 
 ## 1. 目的とスコープ
+
+本書は、本システムにおける関数呼び出し順序・制御フロー・状態遷移ルーティング・DTOスキーマ・エラー対処契約の正本 (SSOT) とする。ストレージ構造や永続化スキーマ（DAO/State正本）については「データ構造仕様書 (KNB-DS-002)」を参照する。
 
 本ドキュメントは、パーソナル・ナレッジ自動生成システムにおいて以下の具象モジュール仕様を規定する。
 
@@ -99,50 +101,44 @@ sequenceDiagram
 
 ### 3.1 データモデル (DTO)
 
-```python
-from dataclasses import dataclass, field
-from datetime import datetime
+本モジュール群で受け渡しされるDTOのフィールド仕様を以下に示す。本書を各DTOのSSOT（正本）とする。
 
-@dataclass
-class SearchEntry:
-    """ブラウザから抽出された単一検索クエリDTO"""
-    timestamp: datetime
-    keyword: str
-    source_browser: str
+#### ① `SearchEntry`（ブラウザから抽出された単一検索クエリ）
+| フィールド名     | データ型   | 必須性 | デフォルト値 | 説明                                                                               |
+| :--------------- | :--------- | :----: | :----------- | :--------------------------------------------------------------------------------- |
+| `timestamp`      | `datetime` |  必須  | なし         | 検索が実行されたUTC日時                                                            |
+| `keyword`        | `str`      |  必須  | なし         | 検索キーワード文字列                                                               |
+| `source_browser` | `str`      |  必須  | なし         | 取得元ブラウザ識別子 (`chrome`, `edge`, `firefox`)。重複統合時はカンマ区切りで結合 |
 
-@dataclass
-class SearchSession:
-    """30分以内の連続検索または意味的クラスタで構成されるセッションDTO"""
-    start_time: datetime
-    end_time: datetime
-    queries: list[str]
-    source_browsers: list[str] = field(default_factory=list)
+#### ② `SearchSession`（30分以内の連続検索または意味的クラスタで構成されるセッション）
+| フィールド名      | データ型    | 必須性 | デフォルト値 | 説明                                              |
+| :---------------- | :---------- | :----: | :----------- | :------------------------------------------------ |
+| `start_time`      | `datetime`  |  必須  | なし         | セッション内の最古クエリ検索日時                  |
+| `end_time`        | `datetime`  |  必須  | なし         | セッション内の最新クエリ検索日時                  |
+| `queries`         | `list[str]` |  必須  | なし         | セッションに含まれる一連のクエリリスト（2件以上） |
+| `source_browsers` | `list[str]` |  任意  | 空リスト     | セッションに関与したブラウザ識別子のリスト        |
 
-@dataclass
-class RoutingDecision:
-    """ルーティング判定結果DTO"""
-    action: str  # 'create_issue' または 'add_comment'
-    target_issue_number: int | None
-    similarity_score: float
-    title: str
-    body: str
-```
+#### ③ `RoutingDecision`（ルーティング判定結果）
+| フィールド名          | データ型      | 必須性 | デフォルト値 | 説明                                                               |
+| :-------------------- | :------------ | :----: | :----------- | :----------------------------------------------------------------- |
+| `action`              | `str`         |  必須  | なし         | `'create_issue'`（新規起票）または `'add_comment'`（コメント追記） |
+| `target_issue_number` | `int \| None` |  必須  | `None`       | コメント追記先Issue番号（`action == 'add_comment'` の場合）        |
+| `similarity_score`    | `float`       |  必須  | なし         | 最大類似度スコア (0.0〜1.0)                                        |
+| `title`               | `str`         |  必須  | なし         | 新規起票時のタイトル（`add_comment` 時は空文字）                   |
+| `body`                | `str`         |  必須  | なし         | 起票本文または追記コメント本文                                     |
 
 ---
 
 ### 3.2 データアクセス層 (DAO) 仕様
 
 #### ① パス解決とハードコード定義
-外部からのファイルパス指定は排除し、各ブラウザの標準プロファイルパスを定義する。
+外部からのファイルパス指定は排除し、各ブラウザの標準プロファイルパスをコード内に定義する。
 
-```python
-# Chromium 系 (Windows)
-CHROME_HISTORY_PATH = Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/User Data/Default/History"
-EDGE_HISTORY_PATH = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft/Edge/User Data/Default/History"
-
-# Firefox (Windows: プロファイル名が可変のため *.default-release 配下の places.sqlite を探索)
-FIREFOX_PROFILES_DIR = Path(os.environ.get("APPDATA", "")) / "Mozilla/Firefox/Profiles"
-```
+| ブラウザ | 基準環境変数   | 相対パス                                                   | 補足                                                      |
+| :------- | :------------- | :--------------------------------------------------------- | :-------------------------------------------------------- |
+| Chrome   | `LOCALAPPDATA` | `Google/Chrome/User Data/Default/History`                  | 固定パス                                                  |
+| Edge     | `LOCALAPPDATA` | `Microsoft/Edge/User Data/Default/History`                 | 固定パス                                                  |
+| Firefox  | `APPDATA`      | `Mozilla/Firefox/Profiles/*.default-release/places.sqlite` | プロファイル名が可変のため `*.default-release` 配下を探索 |
 
 #### ② 安全コピーとサイレントエラー
 * `shutil.copy2` を使用して `tempfile.TemporaryDirectory` 配下に複製。
@@ -186,22 +182,15 @@ FIREFOX_PROFILES_DIR = Path(os.environ.get("APPDATA", "")) / "Mozilla/Firefox/Pr
 ### 3.4 連携層 (Integration) 仕様
 
 #### ① Issue クライアント抽象化 (`BaseIssueClient`)
-異なるストレージバックエンド（GitHub API / ローカルJSON）を統一的に操作するための抽象インターフェース。
+異なるストレージバックエンド（GitHub API / ローカルJSON）を統一的に操作するための抽象インターフェース。実装クラスは以下の抽象メンバー全てを実装する契約とする。
 
-```python
-class BaseIssueClient(ABC):
-    @property
-    @abstractmethod
-    def is_configured(self) -> bool: ...
-    @abstractmethod
-    def get_open_issues(self) -> list[dict[str, Any]]: ...
-    @abstractmethod
-    def create_issue(self, title: str, body: str) -> int | None: ...
-    @abstractmethod
-    def add_comment(self, issue_number: int, comment_body: str) -> bool: ...
-    @abstractmethod
-    def close_issue(self, issue_number: int) -> bool: ...
-```
+| メンバー名        | 種別           | 引数                                     | 戻り値                 | 説明                                                   |
+| :---------------- | :------------- | :--------------------------------------- | :--------------------- | :----------------------------------------------------- |
+| `is_configured`   | 抽象プロパティ | なし                                     | `bool`                 | クライアントが利用可能な状態か（認証情報設定済みか等） |
+| `get_open_issues` | 抽象メソッド   | なし                                     | `list[dict[str, Any]]` | Open状態のIssue一覧を取得                              |
+| `create_issue`    | 抽象メソッド   | `title: str`, `body: str`                | `int \| None`          | 新規Issueを起票し、起票番号を返却（失敗時 `None`）     |
+| `add_comment`     | 抽象メソッド   | `issue_number: int`, `comment_body: str` | `bool`                 | 既存Issueにコメントを追記、成功時 `True`               |
+| `close_issue`     | 抽象メソッド   | `issue_number: int`                      | `bool`                 | Issueをクローズ状態に変更、成功時 `True`               |
 
 ##### 実装1: `GitHubIssueClient`
 - GitHub REST API (`https://api.github.com/repos/{owner}/{repo}/issues`) を通じて Issue の取得・起票・コメント追記を行う。
@@ -228,11 +217,11 @@ class BaseIssueClient(ABC):
 
 ## 4. エラーハンドリングと例外設計
 
-| 発生レイヤー | 想定異常事象 | 処置 |
-| :--- | :--- | :--- |
-| **DAO層** | ブラウザ起動中によるDBロック | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ |
-| **Domain層** | Gemini API 意図判定/埋め込みエラー | エラーログを出力し、安全なデフォルト（意図判定は False、埋め込みはゼロベクトル）を返却 |
-| **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期 |
+| 発生レイヤー      | 想定異常事象                           | 処置                                                                                   |
+| :---------------- | :------------------------------------- | :------------------------------------------------------------------------------------- |
+| **DAO層**         | ブラウザ起動中によるDBロック           | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ                         |
+| **Domain層**      | Gemini API 意図判定/埋め込みエラー     | エラーログを出力し、安全なデフォルト（意図判定は False、埋め込みはゼロベクトル）を返却 |
+| **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期               |
 
 ---
 
@@ -251,8 +240,9 @@ class BaseIssueClient(ABC):
 
 ## 6. 改訂履歴 (Change Log)
 
-| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
-| :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（ブラウザ履歴収集・セッション解析・Issueルーティング詳細設計初版制定） |
-| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映 |
+| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                                    |
+| :------ | :--------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（ブラウザ履歴収集・セッション解析・Issueルーティング詳細設計初版制定）                                                             |
+| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映                                          |
 | Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
+| Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO定義・パス定義・`BaseIssueClient`インターフェースのコード直貼りをテーブル形式に変更し、SSOT宣言文を追加                    |
