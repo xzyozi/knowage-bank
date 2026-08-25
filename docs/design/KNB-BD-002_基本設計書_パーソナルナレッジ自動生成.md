@@ -1,7 +1,7 @@
 ---
 title: "基本設計書（パーソナル・ナレッジ自動生成システム）"
 document_type: "basic_design"
-version: "1.4"
+version: "1.5"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -14,14 +14,14 @@ related_documents:
 # 基本設計書（パーソナル・ナレッジ自動生成システム）
 **複数ブラウザ検索履歴横断収集・セッション解析・自律ナレッジ生成アーキテクチャ**
 
-| 項目           | 内容                                                      |
-| :------------- | :-------------------------------------------------------- |
-| 文書番号       | KNB-BD-002                                                |
-| ドキュメント名 | 基本設計書（パーソナル・ナレッジ自動生成システム）        |
-| 版数           | Rev.1.4 (変更管理方針章とCLIエントリーポイント仕様の追加) |
-| 改訂日         | 2026-08-25                                                |
-| 作成日         | 2026-08-23                                                |
-| 作成者         | 開発チーム                                                |
+| 項目           | 内容                                               |
+| :------------- | :------------------------------------------------- |
+| 文書番号       | KNB-BD-002                                         |
+| ドキュメント名 | 基本設計書（パーソナル・ナレッジ自動生成システム） |
+| 版数           | Rev.1.5 (ディレクトリ構成図・クラス図の追加)       |
+| 改訂日         | 2026-08-25                                         |
+| 作成日         | 2026-08-23                                         |
+| 作成者         | 開発チーム                                         |
 
 ---
 
@@ -53,6 +53,8 @@ related_documents:
 ## 2. システム全体アーキテクチャ
 
 システムは4層アーキテクチャおよび抽象Issueタスクキューを中心に構成される。
+
+### 2.1 レイヤー構成図
 
 ```mermaid
 flowchart TD
@@ -103,6 +105,139 @@ flowchart TD
     BaseClient -- "新規起票 / コメント追記" --> GitIssue
     GitIssue -- "Openかつ12h更新なし" --> LLM
     LLM -- "Markdown出力 & Issue Close" --> GitIssue
+```
+
+### 2.2 ディレクトリ構成
+
+`src/personal_knowledge/` パッケージ配下のレイヤー別ディレクトリ構成を以下に示す。
+
+```
+src/personal_knowledge/
+├── __init__.py
+├── service.py                      # PersonalKnowledgeService（全体オーケストレーション）
+├── dao/                             # データアクセス層 (DAO Layer)
+│   ├── __init__.py
+│   ├── base_dao.py                  # BrowserHistoryDAO（抽象基底クラス）
+│   ├── chromium_dao.py              # ChromiumHistoryDAO（Chrome / Edge）
+│   └── firefox_dao.py               # FirefoxHistoryDAO（Firefox）
+├── domain/                          # ビジネスロジック層 (Domain Layer)
+│   ├── __init__.py
+│   ├── models.py                    # SearchEntry / SearchSession（DTO）
+│   ├── deduplicator.py               # SessionDeduplicator（5分以内重複排除）
+│   └── analyzer.py                   # SessionAnalyzer（30分セッション分割）
+│                                     # ※ IntentFilter / SemanticClusterer は未着手（本書§3.2参照）
+└── integration/                     # キュー管理・API連携層 (Integration Layer)
+    ├── __init__.py
+    ├── base_issue_client.py          # BaseIssueClient（抽象基底クラス）
+    ├── github_client.py              # GitHubIssueClient
+    ├── local_file_client.py          # LocalFileIssueClient
+    └── issue_router.py               # IssueRouter / RoutingDecision
+
+src/scripts/
+└── run-personal-knowledge-collector.py   # CLI実行エントリーポイント（§5.2参照）
+```
+
+> ナレッジ生成層 (Output Layer) は独立ディレクトリとして未着手であり、上記構成には含まれない（本書§3.4参照）。
+
+### 2.3 クラス図
+
+各レイヤーの主要クラスと継承・依存関係を以下に示す。
+
+```mermaid
+classDiagram
+    class BrowserHistoryDAO {
+        <<abstract>>
+        +browser_name: str
+        +default_history_path: Path
+        +target_history_path: Path
+        +fetch_search_entries(limit) list~SearchEntry~
+        #_extract_from_sqlite(db_path, limit) list~SearchEntry~
+    }
+    class ChromiumHistoryDAO {
+        +browser_name: str
+        +default_history_path: Path
+    }
+    class FirefoxHistoryDAO {
+        +browser_name: str
+        +default_history_path: Path
+    }
+    BrowserHistoryDAO <|-- ChromiumHistoryDAO
+    BrowserHistoryDAO <|-- FirefoxHistoryDAO
+
+    class SearchEntry {
+        +timestamp: datetime
+        +keyword: str
+        +source_browser: str
+    }
+    class SearchSession {
+        +start_time: datetime
+        +end_time: datetime
+        +queries: list~str~
+        +source_browsers: list~str~
+    }
+    class SessionDeduplicator {
+        +time_window_seconds: int
+        +deduplicate(entries) list~SearchEntry~
+    }
+    class SessionAnalyzer {
+        +session_gap_seconds: int
+        +min_queries: int
+        +analyze_sessions(entries) list~SearchSession~
+    }
+    SessionDeduplicator ..> SearchEntry : uses
+    SessionAnalyzer ..> SearchEntry : uses
+    SessionAnalyzer ..> SearchSession : creates
+
+    class BaseIssueClient {
+        <<abstract>>
+        +is_configured: bool
+        +get_open_issues() list~dict~
+        +create_issue(title, body) int
+        +add_comment(issue_number, comment_body) bool
+        +close_issue(issue_number) bool
+    }
+    class GitHubIssueClient {
+        +repo: str
+        +token: str
+        +is_configured: bool
+    }
+    class LocalFileIssueClient {
+        +storage_path: Path
+        +is_configured: bool
+    }
+    BaseIssueClient <|-- GitHubIssueClient
+    BaseIssueClient <|-- LocalFileIssueClient
+
+    class RoutingDecision {
+        +action: str
+        +target_issue_number: int
+        +similarity_score: float
+        +title: str
+        +body: str
+    }
+    class IssueRouter {
+        +similarity_threshold: float
+        +tokenize(text) set~str~
+        +calculate_similarity(a, b) float
+        +evaluate_routing(session, open_issues) RoutingDecision
+    }
+    IssueRouter ..> SearchSession : uses
+    IssueRouter ..> RoutingDecision : creates
+
+    class PersonalKnowledgeService {
+        +daos: list~BrowserHistoryDAO~
+        +deduplicator: SessionDeduplicator
+        +analyzer: SessionAnalyzer
+        +router: IssueRouter
+        +issue_client: BaseIssueClient
+        +collect_raw_entries() list~SearchEntry~
+        +run_pipeline(dry_run) PipelineExecutionResult
+    }
+    PersonalKnowledgeService --> BrowserHistoryDAO : composes
+    PersonalKnowledgeService --> SessionDeduplicator : composes
+    PersonalKnowledgeService --> SessionAnalyzer : composes
+    PersonalKnowledgeService --> IssueRouter : composes
+    PersonalKnowledgeService --> BaseIssueClient : composes
 ```
 
 ---
@@ -201,3 +336,4 @@ Issue（またはローカルナレッジ保存先）を揮発しない状態保
 | Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
 | Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO詳細フィールド定義の重複記述を解消し、SSOTを詳細設計書(KNB-DD-008)に一元化                                                 |
 | Rev.1.4 | 2026-08-25 | 開発チーム | レビュー対応: 変更管理方針章(§6)とCLIエントリーポイント仕様(§5.2)を追加                                                                     |
+| Rev.1.5 | 2026-08-25 | 開発チーム | 実装イメージ図追加: `src/personal_knowledge/` のディレクトリ構成(§2.2)と主要クラスの関係を示すクラス図(§2.3)を追加                          |
