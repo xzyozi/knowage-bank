@@ -1,7 +1,7 @@
 ---
 title: "基本設計書（パーソナル・ナレッジ自動生成システム）"
 document_type: "basic_design"
-version: "1.5"
+version: "1.6"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -18,7 +18,7 @@ related_documents:
 | :------------- | :------------------------------------------------- |
 | 文書番号       | KNB-BD-002                                         |
 | ドキュメント名 | 基本設計書（パーソナル・ナレッジ自動生成システム） |
-| 版数           | Rev.1.5 (ディレクトリ構成図・クラス図の追加)       |
+| 版数           | Rev.1.6 (レイヤー構成図のmermaid記法エラー修正)    |
 | 改訂日         | 2026-08-25                                         |
 | 作成日         | 2026-08-23                                         |
 | 作成者         | 開発チーム                                         |
@@ -68,8 +68,8 @@ flowchart TD
         BaseDAO["BrowserHistoryDAO\n(基底クラス)"]
         ChromiumDAO["ChromiumHistoryDAO\n(Chrome / Edge)"]
         FirefoxDAO["FirefoxHistoryDAO\n(Firefox)"]
-        BaseDAO <|-- ChromiumDAO
-        BaseDAO <|-- FirefoxDAO
+        ChromiumDAO -->|継承| BaseDAO
+        FirefoxDAO -->|継承| BaseDAO
     end
 
     subgraph DomainLayer ["ビジネスロジック層 (Domain)"]
@@ -83,8 +83,8 @@ flowchart TD
         BaseClient["BaseIssueClient\n(抽象クライアント)"]
         GitHubClient["GitHubIssueClient\n(GitHub REST API)"]
         LocalClient["LocalFileIssueClient\n(ローカルJSON/メモリ)"]
-        BaseClient <|-- GitHubClient
-        BaseClient <|-- LocalClient
+        GitHubClient -->|継承| BaseClient
+        LocalClient -->|継承| BaseClient
     end
 
     subgraph OutputLayer ["ナレッジ生成層 (Output)"]
@@ -337,3 +337,4 @@ Issue（またはローカルナレッジ保存先）を揮発しない状態保
 | Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO詳細フィールド定義の重複記述を解消し、SSOTを詳細設計書(KNB-DD-008)に一元化                                                 |
 | Rev.1.4 | 2026-08-25 | 開発チーム | レビュー対応: 変更管理方針章(§6)とCLIエントリーポイント仕様(§5.2)を追加                                                                     |
 | Rev.1.5 | 2026-08-25 | 開発チーム | 実装イメージ図追加: `src/personal_knowledge/` のディレクトリ構成(§2.2)と主要クラスの関係を示すクラス図(§2.3)を追加                          |
+| Rev.1.6 | 2026-08-25 | 開発チーム | 記法修正: §2.1レイヤー構成図(flowchart)で誤用されていたclassDiagram専用の継承矢印`<\|--`をラベル付き矢印に修正                              |
