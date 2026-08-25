@@ -1,7 +1,7 @@
 ---
 title: "基本設計書（パーソナル・ナレッジ自動生成システム）"
 document_type: "basic_design"
-version: "1.6"
+version: "1.7"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -18,7 +18,7 @@ related_documents:
 | :------------- | :------------------------------------------------- |
 | 文書番号       | KNB-BD-002                                         |
 | ドキュメント名 | 基本設計書（パーソナル・ナレッジ自動生成システム） |
-| 版数           | Rev.1.6 (レイヤー構成図のmermaid記法エラー修正)    |
+| 版数           | Rev.1.7 (IntentFilter/SemanticClusterer実装反映)   |
 | 改訂日         | 2026-08-25                                         |
 | 作成日         | 2026-08-23                                         |
 | 作成者         | 開発チーム                                         |
@@ -40,6 +40,7 @@ related_documents:
    - 既存の静的サイトビルド系モジュールとは完全分離した独立パッケージ（`src/personal_knowledge/`）として構築し、結合度を極小化する。
 3. **意図判定フィルタとベクトル埋め込みクラスタリング (Intent Filtering & Semantic Clustering)**:
    - クラウド連携オプションとして、Google Gemini API (`gemini-1.5-flash` / `gemini-2.5-flash`) による「ナレッジ意図判定（True/False）」と `text-embedding-004` & コサイン類似度による高精度な意味的セッション分離をサポートする。
+   - `IntentFilter` / `SemanticClusterer` として実装済み。`PersonalKnowledgeService` へのオプトイン注入（CLI `--use-gemini` 指定時のみ有効化）方式を採用し、既定のルールベース処理への影響を排除する。
 4. **ストレージ依存の抽象化 (Decoupled Issue Tracker)**:
    - 抽象基底クラス `BaseIssueClient` を通じて操作を行うことで、GitHub Issue REST API 連携（`GitHubIssueClient`）とローカルJSON/メモリ保存（`LocalFileIssueClient`）をシームレスに切り替え可能とする。
 5. **非侵入・サイレントフォールト耐性**:
@@ -120,12 +121,14 @@ src/personal_knowledge/
 │   ├── base_dao.py                  # BrowserHistoryDAO（抽象基底クラス）
 │   ├── chromium_dao.py              # ChromiumHistoryDAO（Chrome / Edge）
 │   └── firefox_dao.py               # FirefoxHistoryDAO（Firefox）
+├── config_loader.py                 # config/personal_knowledge_config.json 読み込み (PersonalKnowledgeConfig)
 ├── domain/                          # ビジネスロジック層 (Domain Layer)
 │   ├── __init__.py
 │   ├── models.py                    # SearchEntry / SearchSession（DTO）
 │   ├── deduplicator.py               # SessionDeduplicator（5分以内重複排除）
-│   └── analyzer.py                   # SessionAnalyzer（30分セッション分割）
-│                                     # ※ IntentFilter / SemanticClusterer は未着手（本書§3.2参照）
+│   ├── analyzer.py                   # SessionAnalyzer（30分セッション分割・既定方式）
+│   ├── intent_filter.py              # IntentFilter（Gemini API意図判定・オプトイン）
+│   └── semantic_clusterer.py         # SemanticClusterer（Gemini Embeddingクラスタリング・オプトイン）
 └── integration/                     # キュー管理・API連携層 (Integration Layer)
     ├── __init__.py
     ├── base_issue_client.py          # BaseIssueClient（抽象基底クラス）
@@ -134,9 +137,14 @@ src/personal_knowledge/
     └── issue_router.py               # IssueRouter / RoutingDecision
 
 src/scripts/
-└── run-personal-knowledge-collector.py   # CLI実行エントリーポイント（§5.2参照）
+└── run-personal-knowledge-collector.py   # CLI実行エントリーポイント（§5.2参照。--use-gemini で IntentFilter/SemanticClusterer を有効化）
+
+config/
+└── personal_knowledge_config.json   # パイプライン設定ファイル（KNB-DS-002 §3.2参照）
 ```
 
+> **オプトイン設計**: `IntentFilter` / `SemanticClusterer` は `PersonalKnowledgeService` の対応する引数に明示的にインスタンスを渡した場合のみ有効化される。CLI では `--use-gemini` フラグ指定時のみ両クラスが生成・注入される。未指定時は既存のルールベース処理（ブラックリストなし・`SessionAnalyzer` による30分間隔セッション分割）のみで動作し、既存の振る舞いに影響しない。
+>
 > ナレッジ生成層 (Output Layer) は独立ディレクトリとして未着手であり、上記構成には含まれない（本書§3.4参照）。
 
 ### 2.3 クラス図
@@ -224,13 +232,40 @@ classDiagram
     IssueRouter ..> SearchSession : uses
     IssueRouter ..> RoutingDecision : creates
 
+    class IntentFilter {
+        +blacklisted_keywords: list~str~
+        +system_prompt: str
+        +chat_model: str
+        +is_knowledge_query(keyword) bool
+    }
+    class SemanticClusterer {
+        +embed_model: str
+        +similarity_threshold: float
+        +process_entries(entries) list~SearchSession~
+    }
+    IntentFilter ..> PersonalKnowledgeConfig : loads defaults from
+    SemanticClusterer ..> PersonalKnowledgeConfig : loads defaults from
+    SemanticClusterer ..> SearchEntry : uses
+    SemanticClusterer ..> SearchSession : creates
+
+    class PersonalKnowledgeConfig {
+        +api: ApiConfig
+        +clustering: ClusteringConfig
+        +filtering: FilteringConfig
+        +github: GithubConfig
+    }
+    %% load_config() は config_loader モジュールの関数であり、PersonalKnowledgeConfig を構築する
+
     class PersonalKnowledgeService {
         +daos: list~BrowserHistoryDAO~
         +deduplicator: SessionDeduplicator
         +analyzer: SessionAnalyzer
         +router: IssueRouter
         +issue_client: BaseIssueClient
+        +intent_filter: IntentFilter
+        +semantic_clusterer: SemanticClusterer
         +collect_raw_entries() list~SearchEntry~
+        +process_entries_to_sessions(raw_entries) tuple
         +run_pipeline(dry_run) PipelineExecutionResult
     }
     PersonalKnowledgeService --> BrowserHistoryDAO : composes
@@ -238,6 +273,8 @@ classDiagram
     PersonalKnowledgeService --> SessionAnalyzer : composes
     PersonalKnowledgeService --> IssueRouter : composes
     PersonalKnowledgeService --> BaseIssueClient : composes
+    PersonalKnowledgeService --> IntentFilter : composes (optional)
+    PersonalKnowledgeService --> SemanticClusterer : composes (optional)
 ```
 
 ---
@@ -309,11 +346,12 @@ Issue（またはローカルナレッジ保存先）を揮発しない状態保
 ### 5.2 CLI 実行エントリーポイント
 `src/scripts/run-personal-knowledge-collector.py` を手動または定期実行タスクのエントリーポイントとする。
 
-| 引数名          | 必須性 | 既定値                         | 説明                                                                                                             |
-| :-------------- | :----: | :----------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| `--dry-run`     |  任意  | 無効                           | Issueへの起票・コメント追記を行わず、抽出・ルーティング判定結果のみを表示する                                    |
-| `--json-output` |  任意  | 無効                           | 実行結果サマリーをJSON形式で標準出力に出力する                                                                   |
-| `--backend`     |  任意  | 未指定（環境変数から自動判定） | 保存先バックエンドを `github` または `local` に固定する。未指定時は環境変数 `GITHUB_REPOSITORY` の有無で自動判定 |
+| 引数名          | 必須性 | 既定値                         | 説明                                                                                                                                                                                        |
+| :-------------- | :----: | :----------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--dry-run`     |  任意  | 無効                           | Issueへの起票・コメント追記を行わず、抽出・ルーティング判定結果のみを表示する                                                                                                               |
+| `--json-output` |  任意  | 無効                           | 実行結果サマリーをJSON形式で標準出力に出力する                                                                                                                                              |
+| `--backend`     |  任意  | 未指定（環境変数から自動判定） | 保存先バックエンドを `github` または `local` に固定する。未指定時は環境変数 `GITHUB_REPOSITORY` の有無で自動判定                                                                            |
+| `--use-gemini`  |  任意  | 無効                           | `IntentFilter`（意図判定フィルタ）および `SemanticClusterer`（Embeddingクラスタリング）を有効化する。未指定時はルールベース処理のみで動作。有効化時は環境変数 `GEMINI_API_KEY` の設定が必要 |
 
 ### 5.3 安全回路・システム境界方針
 - **サイレントエラー契約**: DAO層でのブラウザDB読み込みエラー（ロック中など）はログ出力のみで処理を中断せず安全にスキップする。
@@ -329,12 +367,13 @@ Issue（またはローカルナレッジ保存先）を揮発しない状態保
 
 ## 7. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                                    |
-| :------ | :--------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（パーソナル・ナレッジ自動生成システムの基本設計初版制定）                                                                          |
-| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象インターフェースおよび `LocalFileIssueClient` の追加、GitHub分離・ローカルスタンドアロン動作仕様の明記                |
-| Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
-| Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO詳細フィールド定義の重複記述を解消し、SSOTを詳細設計書(KNB-DD-008)に一元化                                                 |
-| Rev.1.4 | 2026-08-25 | 開発チーム | レビュー対応: 変更管理方針章(§6)とCLIエントリーポイント仕様(§5.2)を追加                                                                     |
-| Rev.1.5 | 2026-08-25 | 開発チーム | 実装イメージ図追加: `src/personal_knowledge/` のディレクトリ構成(§2.2)と主要クラスの関係を示すクラス図(§2.3)を追加                          |
-| Rev.1.6 | 2026-08-25 | 開発チーム | 記法修正: §2.1レイヤー構成図(flowchart)で誤用されていたclassDiagram専用の継承矢印`<\|--`をラベル付き矢印に修正                              |
+| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                                                    |
+| :------ | :--------- | :--------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（パーソナル・ナレッジ自動生成システムの基本設計初版制定）                                                                                          |
+| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象インターフェースおよび `LocalFileIssueClient` の追加、GitHub分離・ローカルスタンドアロン動作仕様の明記                                |
+| Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映                 |
+| Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO詳細フィールド定義の重複記述を解消し、SSOTを詳細設計書(KNB-DD-008)に一元化                                                                 |
+| Rev.1.4 | 2026-08-25 | 開発チーム | レビュー対応: 変更管理方針章(§6)とCLIエントリーポイント仕様(§5.2)を追加                                                                                     |
+| Rev.1.5 | 2026-08-25 | 開発チーム | 実装イメージ図追加: `src/personal_knowledge/` のディレクトリ構成(§2.2)と主要クラスの関係を示すクラス図(§2.3)を追加                                          |
+| Rev.1.6 | 2026-08-25 | 開発チーム | 記法修正: §2.1レイヤー構成図(flowchart)で誤用されていたclassDiagram専用の継承矢印`<\|--`をラベル付き矢印に修正                                              |
+| Rev.1.7 | 2026-08-25 | 開発チーム | 実装反映: `IntentFilter`/`SemanticClusterer`/`config_loader`をディレクトリ構成図・クラス図に追加、CLI仕様表に`--use-gemini`を追加、オプトイン統合方式を明記 |

@@ -1,7 +1,7 @@
 ---
 title: "詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）"
 document_type: "detailed_design"
-version: "1.3"
+version: "1.4"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -18,7 +18,7 @@ related_documents:
 | :------------- | :------------------------------------------------------------------------ |
 | 文書番号       | KNB-DD-008                                                                |
 | ドキュメント名 | 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様） |
-| 版数           | Rev.1.3 (DTO・パス定義・インターフェースのコード直貼り解消)               |
+| 版数           | Rev.1.4 (IntentFilter/SemanticClustererの実装反映)                        |
 | 改訂日         | 2026-08-25                                                                |
 | 作成日         | 2026-08-23                                                                |
 | 作成者         | 開発チーム                                                                |
@@ -65,15 +65,23 @@ sequenceDiagram
     Note over Deduplicator: 時系列ソート & 5分以内同一キーワード結合<br>(ブラウザ識別子マージ)
     Deduplicator -->> Aggregator: list[SearchEntry] (重複排除済)
 
-    loop 各 SearchEntry ごと
-        Aggregator ->> Filter: is_knowledge_query(keyword)
-        Note over Filter: 1. ブラックリスト判定 (天気, ナビ, 娯楽等)<br>2. Gemini API (gemini-1.5-flash) True/False 判定
-        Filter -->> Aggregator: is_valid (bool)
+    opt intent_filter が設定されている場合 (--use-gemini指定時のみ)
+        loop 各 SearchEntry ごと
+            Aggregator ->> Filter: is_knowledge_query(keyword)
+            Note over Filter: 1. ブラックリスト判定 (天気, ナビ, 娯楽等)<br>2. Gemini API (gemini-1.5-flash) True/False 判定
+            Filter -->> Aggregator: is_valid (bool)
+        end
     end
 
-    Aggregator ->> Analyzer: process_entries(knowledge_entries)
-    Note over Analyzer: ベクトル埋め込み (text-embedding-004) + コサイン類似度<br>または30分ルールベースで一括まとめ (セッション化)
-    Analyzer -->> Aggregator: list[SearchSession] (有効セッション群)
+    alt semantic_clusterer が設定されている場合 (--use-gemini指定時のみ)
+        Aggregator ->> Analyzer: process_entries(entries)
+        Note over Analyzer: ベクトル埋め込み (text-embedding-004) + コサイン類似度で一括まとめ (セッション化)
+        Analyzer -->> Aggregator: list[SearchSession]
+    else 既定 (未指定時)
+        Aggregator ->> Analyzer: analyze_sessions(entries)
+        Note over Analyzer: 30分間隔ルールベースで一括まとめ (セッション化)
+        Analyzer -->> Aggregator: list[SearchSession]
+    end
 
     Aggregator ->> Client: get_open_issues()
     Client -->> Aggregator: list[OpenIssueDict]
@@ -162,20 +170,25 @@ sequenceDiagram
   3. 一致した場合、直前のエントリにマージ（`source_browser` が異なればカンマ区切り等で結合、タイムスタンプは最新または開始時を保持）。
 * **出力**: 重複排除された `list[SearchEntry]`
 
-#### ② 意図判定フィルタリング (`_is_knowledge_query`)
+#### ② 意図判定フィルタリング (`IntentFilter.is_knowledge_query`)
 * **目的**: 天気予報、乗換案内、ログイン、動画鑑賞等の日常消費・ナビゲーション検索を除外し、知識習得・技術解決目的のクエリのみを抽出する。
+* **有効化方式**: `PersonalKnowledgeService` のオプション引数 `intent_filter` にインスタンスを渡した場合のみ有効化される（オプトイン）。CLI では `--use-gemini` フラグ指定時に有効化される。未指定時はフィルタリングを行わず、重複排除後の全エントリがそのままセッション分割の入力となる。
 * **手順**:
-  1. **ブラックリスト判定**: 設定ファイル (`config.json`) の `filtering.blacklisted_keywords` (`["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]`) に部分一致する場合は即座に `False` を返却。
-  2. **LLM意図判定**: Google Gemini API (`gemini-1.5-flash` または `gemini-2.5-flash`) を呼び出し、システムプロンプトに従って `True` / `False` を出力させる。
-     - システムプロンプト例:
-       > 「提示された検索クエリが『知識の習得、概念の理解、単語の意味の調査、技術的な問題解決』を目的としている場合は 'True' を出力してください。単なるサイトへの移動、エンタメの消費、日常タスクが目的である場合は 'False' を出力してください。」
+  1. **ブラックリスト判定 (`_is_blacklisted`)**: `config/personal_knowledge_config.json` の `filtering.blacklisted_keywords` （既定値: `["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]`）に、小文字化した上で部分一致する場合は即座に `False` を返却（LLM呼び出しは行わない）。
+  2. **LLM意図判定 (`_judge_with_llm`)**: `google-genai` SDK (`google.genai.Client`) を用いて Gemini API (既定モデル: `gemini-1.5-flash`) を呼び出す。
+     - `client.models.generate_content(model=chat_model, contents=keyword, config=types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.0))` の形式で呼び出す。
+     - レスポンステキストを小文字化・前後空白除去した上で `"true"` から始まる場合のみ `True` と判定する。
+     - システムプロンプトは `config/personal_knowledge_config.json` の `filtering.llm_system_prompt` から読み込む（既定値は §3.2 に同じ）。
+  3. **エラー時フォールバック**: API呼び出しまたはレスポンス解析で例外が発生した場合は、警告ログを出力し安全なデフォルトとして `False` を返却する（サイレントフォールト）。
 
-#### ③ セッション解析・クラスタリング (`Analyzer` / `SemanticClusterer`)
-* **ルールベース方式 (`SessionAnalyzer`)**:
+#### ③ セッション解析・クラスタリング (`SessionAnalyzer` / `SemanticClusterer`)
+* **ルールベース方式 (`SessionAnalyzer`)**: 既定で使用される方式。
   - 時系列順に走査し、直前のクエリとの時間間隔が **30分（1,800秒）以内** であれば同一セッションに追加。クエリ数が1件のみの単発検索はノイズとみなし破棄。
-* **ベクトル埋め込み方式 (`SemanticClusterer`)**:
-  - Google Gemini API (`models/text-embedding-004`, 768次元, `task_type="clustering"`) で各クエリをベクトル化。
-  - セッションの代表クエリ（最初のクエリ）のベクトルとコサイン類似度 ($\text{similarity} \ge 0.70$) を計算し、閾値以上であれば該当セッションに統合、未満であれば新規セッションを作成。
+* **ベクトル埋め込み方式 (`SemanticClusterer.process_entries`)**: `PersonalKnowledgeService` のオプション引数 `semantic_clusterer` にインスタンスを渡した場合、`SessionAnalyzer` の代わりに使用される（オプトイン。CLI `--use-gemini` 指定時）。
+  - `google-genai` SDK の `client.models.embed_content(model=embed_model, contents=keyword)` （既定モデル: `models/text-embedding-004`）で各クエリを個別にベクトル化する。API失敗時はゼロベクトル（空リスト）にフォールバックする。
+  - **クラスタリングアルゴリズム（貪欲最近傍法）**: 時系列順に走査し、各エントリのベクトルと、既存の全クラスタの代表ベクトル（各クラスタの先頭エントリのベクトル）とのコサイン類似度を総当たりで計算する。最大類似度が閾値 (`similarity_threshold`, 既定 `0.70`) 以上であれば最も類似度が高いクラスタに追加し、閾値未満（または既存クラスタが無い）場合は新規クラスタを作成する。
+  - コサイン類似度は `(A・B) / (|A| × |B|)` で計算し、いずれかがゼロベクトルの場合は `0.0` を返す（ゼロ除算回避）。
+  - 各クラスタから `SearchSession`（開始/終了日時、クエリ一覧、関与ブラウザ一覧）を生成する。単発（1件のみ）クラスタも破棄せずセッション化する点が `SessionAnalyzer` と異なる。
 
 ---
 
@@ -217,11 +230,11 @@ sequenceDiagram
 
 ## 4. エラーハンドリングと例外設計
 
-| 発生レイヤー      | 想定異常事象                           | 処置                                                                                   |
-| :---------------- | :------------------------------------- | :------------------------------------------------------------------------------------- |
-| **DAO層**         | ブラウザ起動中によるDBロック           | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ                         |
-| **Domain層**      | Gemini API 意図判定/埋め込みエラー     | エラーログを出力し、安全なデフォルト（意図判定は False、埋め込みはゼロベクトル）を返却 |
-| **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期               |
+| 発生レイヤー      | 想定異常事象                           | 処置                                                                                                                                                                                |
+| :---------------- | :------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DAO層**         | ブラウザ起動中によるDBロック           | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ                                                                                                                      |
+| **Domain層**      | Gemini API 意図判定/埋め込みエラー     | `IntentFilter._judge_with_llm` / `SemanticClusterer._embed_text` 内で例外を捕捉し警告ログを出力。安全なデフォルト（意図判定は `False`、埋め込みは空リスト＝ゼロベクトル相当）を返却 |
+| **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期                                                                                                            |
 
 ---
 
@@ -229,20 +242,28 @@ sequenceDiagram
 
 1. **DAO層テスト (`test_personal_knowledge_dao.py`)**:
    - SQLiteモックファイルを作成し、WebKit時間/PRTimeの変換、URLからのクエリ抽出を検証。
-2. **重複排除・意図判定・クラスタリングテスト (`test_personal_knowledge_domain.py`)**:
-   - 5分以内の同一キーワード結合、ブラックリスト＆LLMモック判定、コサイン類似度によるセッション分割を検証。
-3. **Issueクライアントテスト (`test_local_file_client.py`)**:
+2. **重複排除・セッション解析テスト (`test_personal_knowledge_domain.py`)**:
+   - 5分以内の同一キーワード結合、30分間隔ルールベースセッション分割を検証。
+3. **意図判定フィルタテスト (`test_intent_filter.py`)**:
+   - ブラックリスト一致時にLLM呼び出しを行わないこと、Gemini APIモックによる `True`/`False` 判定、API例外時に `False` へフォールバックすることを検証。
+4. **意味的クラスタリングテスト (`test_semantic_clusterer.py`)**:
+   - コサイン類似度関数（同一/直交/ゼロベクトル）、Embeddingモックによるセッション統合、API例外時に空リストへフォールバックすることを検証。
+5. **Issueクライアントテスト (`test_local_file_client.py`)**:
    - `LocalFileIssueClient` のメモリ動作および JSON ファイルへのデータ読み書き・永続化を検証。
-4. **ルーティングテスト (`test_personal_knowledge_router.py` / `test_personal_knowledge_service.py`)**:
+6. **ルーティング・オーケストレーションテスト (`test_personal_knowledge_router.py` / `test_personal_knowledge_service.py` / `test_service_intent_and_clustering.py`)**:
    - 語彙トークナイズおよび Overlap / Jaccard 類似度計算の検証。
+   - `intent_filter` / `semantic_clusterer` 未指定時に既定のルールベース処理のみで動作すること、指定時にオプトイン機能が正しく呼び出されることを検証。
+7. **設定ファイル読み込みテスト (`test_config_loader.py`)**:
+   - 設定ファイル欠落時・不正JSON時にデフォルト値へフォールバックすること、カスタム値の読み込みを検証。
 
 ---
 
 ## 6. 改訂履歴 (Change Log)
 
-| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                                    |
-| :------ | :--------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（ブラウザ履歴収集・セッション解析・Issueルーティング詳細設計初版制定）                                                             |
-| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映                                          |
-| Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
-| Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO定義・パス定義・`BaseIssueClient`インターフェースのコード直貼りをテーブル形式に変更し、SSOT宣言文を追加                    |
+| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                                             |
+| :------ | :--------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（ブラウザ履歴収集・セッション解析・Issueルーティング詳細設計初版制定）                                                                      |
+| Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映                                                   |
+| Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映          |
+| Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO定義・パス定義・`BaseIssueClient`インターフェースのコード直貼りをテーブル形式に変更し、SSOT宣言文を追加                             |
+| Rev.1.4 | 2026-08-25 | 開発チーム | 実装反映: `IntentFilter`/`SemanticClusterer`（`google-genai` SDK使用）の実装詳細、`PersonalKnowledgeService`へのオプトイン統合方式、テスト構成を明記 |
