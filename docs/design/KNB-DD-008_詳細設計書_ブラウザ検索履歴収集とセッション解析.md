@@ -1,7 +1,7 @@
 ---
 title: "詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）"
 document_type: "detailed_design"
-version: "1.4"
+version: "1.3"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -18,7 +18,7 @@ related_documents:
 | :------------- | :------------------------------------------------------------------------ |
 | 文書番号       | KNB-DD-008                                                                |
 | ドキュメント名 | 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様） |
-| 版数           | Rev.1.4 (IntentFilter/SemanticClustererの未実装状況を明記)                |
+| 版数           | Rev.1.3 (DTO・パス定義・インターフェースのコード直貼り解消)               |
 | 改訂日         | 2026-08-25                                                                |
 | 作成日         | 2026-08-23                                                                |
 | 作成者         | 開発チーム                                                                |
@@ -164,7 +164,6 @@ sequenceDiagram
 
 #### ② 意図判定フィルタリング (`_is_knowledge_query`)
 * **目的**: 天気予報、乗換案内、ログイン、動画鑑賞等の日常消費・ナビゲーション検索を除外し、知識習得・技術解決目的のクエリのみを抽出する。
-* **実装状況 (2026-08-25時点)**: 未実装（設計のみ）。`src/personal_knowledge/` に `IntentFilter` / `_is_knowledge_query` 等の該当クラス・関数は存在しない。以下は将来実装時の設計方針。
 * **手順**:
   1. **ブラックリスト判定**: 設定ファイル (`config.json`) の `filtering.blacklisted_keywords` (`["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]`) に部分一致する場合は即座に `False` を返却。
   2. **LLM意図判定**: Google Gemini API (`gemini-1.5-flash` または `gemini-2.5-flash`) を呼び出し、システムプロンプトに従って `True` / `False` を出力させる。
@@ -172,9 +171,9 @@ sequenceDiagram
        > 「提示された検索クエリが『知識の習得、概念の理解、単語の意味の調査、技術的な問題解決』を目的としている場合は 'True' を出力してください。単なるサイトへの移動、エンタメの消費、日常タスクが目的である場合は 'False' を出力してください。」
 
 #### ③ セッション解析・クラスタリング (`Analyzer` / `SemanticClusterer`)
-* **ルールベース方式 (`SessionAnalyzer`)**: 実装済み（`src/personal_knowledge/domain/analyzer.py`）。
+* **ルールベース方式 (`SessionAnalyzer`)**:
   - 時系列順に走査し、直前のクエリとの時間間隔が **30分（1,800秒）以内** であれば同一セッションに追加。クエリ数が1件のみの単発検索はノイズとみなし破棄。
-* **ベクトル埋め込み方式 (`SemanticClusterer`)**: **未実装（設計のみ）**。`SemanticClusterer` クラスはコード上に存在しない。以下は将来実装時の設計方針。
+* **ベクトル埋め込み方式 (`SemanticClusterer`)**:
   - Google Gemini API (`models/text-embedding-004`, 768次元, `task_type="clustering"`) で各クエリをベクトル化。
   - セッションの代表クエリ（最初のクエリ）のベクトルとコサイン類似度 ($\text{similarity} \ge 0.70$) を計算し、閾値以上であれば該当セッションに統合、未満であれば新規セッションを作成。
 
@@ -247,4 +246,3 @@ sequenceDiagram
 | Rev.1.1 | 2026-08-25 | 開発チーム | `BaseIssueClient` 抽象化、`LocalFileIssueClient` 詳細、Overlap/Jaccardハイブリッド類似度仕様の反映                                          |
 | Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映 |
 | Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO定義・パス定義・`BaseIssueClient`インターフェースのコード直貼りをテーブル形式に変更し、SSOT宣言文を追加                    |
-| Rev.1.4 | 2026-08-25 | 開発チーム | レビュー対応: `IntentFilter`（Gemini API意図判定）および`SemanticClusterer`（Embeddingクラスタリング）が未実装(設計のみ)である旨を明記      |
