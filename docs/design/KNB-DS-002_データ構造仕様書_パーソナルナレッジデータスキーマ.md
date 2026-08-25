@@ -1,7 +1,7 @@
 ---
 title: "データ構造仕様書（パーソナル・ナレッジデータスキーマ・キュー定義）"
 document_type: "data_structure_specification"
-version: "1.2"
+version: "1.3"
 created_at: "2026-08-23"
 updated_at: "2026-08-25"
 author: "開発チーム"
@@ -18,7 +18,7 @@ related_documents:
 | :------------- | :----------------------------------------------------------------- |
 | 文書番号       | KNB-DS-002                                                         |
 | ドキュメント名 | データ構造仕様書（パーソナル・ナレッジデータスキーマ・キュー定義） |
-| 版数           | Rev.1.2 (永続化・排他制御およびデータ生命周期章の追加)             |
+| 版数           | Rev.1.3 (config.json未実装状況の明記)                              |
 | 改訂日         | 2026-08-25                                                         |
 | 作成日         | 2026-08-23                                                         |
 | 作成者         | 開発チーム                                                         |
@@ -114,37 +114,17 @@ erDiagram
 
 外部からパイプラインの動作挙動、APIモデル指定、意図判定フィルタリングルール、類似度閾値を制御するJSONスキーマ。
 
-```json
-{
-  "api": {
-    "provider": "gemini",
-    "chat_model": "gemini-1.5-flash",
-    "embed_model": "models/text-embedding-004"
-  },
-  "clustering": {
-    "similarity_threshold": 0.70
-  },
-  "filtering": {
-    "blacklisted_keywords": ["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"],
-    "llm_system_prompt": "あなたは検索クエリの意図を分類するアシスタントです。提示された検索クエリが『知識の習得、概念の理解、単語の意味の調査、技術的な問題解決』を目的としている場合は 'True' を出力してください。単なるサイトへの移動（ナビゲーション）、エンタメの消費、日常タスク（天気やルート検索）が目的である場合は 'False' を出力してください。出力は True または False のみとし、他の文字列を含めないでください。"
-  },
-  "github": {
-    "owner": "owner_name",
-    "repo": "repo_name",
-    "issue_similarity_threshold": 0.30
-  }
-}
-```
+> **実装状況 (2026-08-25時点): 未実装（設計のみ）**。本節が定める `config.json`（`api`/`clustering`/`filtering`/`github` セクション）はリポジトリ上に実体が存在しない。実装済みの類似ファイルは `config/category_config.json`（記事カテゴリ分類用の無関係な別スキーマ）のみであり、本節の値は §3.3・§4以降が参照する `IntentFilter` / `SemanticClusterer`（KNB-DD-008参照、いずれも未実装）専用の将来スキーマである。
 
-| セクション   | キー名                       | データ型    | デフォルト値                  | 説明                                                     |
-| :----------- | :--------------------------- | :---------- | :---------------------------- | :------------------------------------------------------- |
-| `api`        | `provider`                   | `str`       | `"gemini"`                    | LLM/Embeddingプロバイダ種別 (`"gemini"`, `"ollama"`)     |
-| `api`        | `chat_model`                 | `str`       | `"gemini-1.5-flash"`          | 意図判定用チャットLLMモデル名                            |
-| `api`        | `embed_model`                | `str`       | `"models/text-embedding-004"` | ベクトル埋め込みモデル名                                 |
-| `clustering` | `similarity_threshold`       | `float`     | `0.70`                        | ベクトル埋め込みコサイン類似度セッション統合閾値         |
-| `filtering`  | `blacklisted_keywords`       | `list[str]` | `[...]`                       | 即座に排除する非技術系日常検索キーワードリスト           |
-| `filtering`  | `llm_system_prompt`          | `str`       | `"..."`                       | 意図判定時にGemini APIに与える二値分類システムプロンプト |
-| `github`     | `issue_similarity_threshold` | `float`     | `0.30`                        | 既存Issueへのコメント追加判定時の語彙類似度閾値          |
+| セクション   | キー名                       | データ型    | デフォルト値                                                      | 説明                                                     |
+| :----------- | :--------------------------- | :---------- | :---------------------------------------------------------------- | :------------------------------------------------------- |
+| `api`        | `provider`                   | `str`       | `"gemini"`                                                        | LLM/Embeddingプロバイダ種別 (`"gemini"`, `"ollama"`)     |
+| `api`        | `chat_model`                 | `str`       | `"gemini-1.5-flash"`                                              | 意図判定用チャットLLMモデル名                            |
+| `api`        | `embed_model`                | `str`       | `"models/text-embedding-004"`                                     | ベクトル埋め込みモデル名                                 |
+| `clustering` | `similarity_threshold`       | `float`     | `0.70`                                                            | ベクトル埋め込みコサイン類似度セッション統合閾値         |
+| `filtering`  | `blacklisted_keywords`       | `list[str]` | `["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]` | 即座に排除する非技術系日常検索キーワードリスト           |
+| `filtering`  | `llm_system_prompt`          | `str`       | （分類用システムプロンプト文字列）                                | 意図判定時にGemini APIに与える二値分類システムプロンプト |
+| `github`     | `issue_similarity_threshold` | `float`     | `0.30`                                                            | 既存Issueへのコメント追加判定時の語彙類似度閾値          |
 
 ---
 
@@ -207,3 +187,4 @@ erDiagram
 | Rev.1.0 | 2026-08-23 | 開発チーム | 新規作成（パーソナル・ナレッジデータスキーマおよびGit Issueキュー定義初版制定）                                                                                                                        |
 | Rev.1.1 | 2026-08-25 | 開発チーム | Gemini API / 意図判定プロンプト / ブラックリスト / コサイン類似度設定用の `config.json` スキーマ定義を追加                                                                                             |
 | Rev.1.2 | 2026-08-25 | 開発チーム | 規約違反修正: テンプレ必須章「永続化・原子置換契約・排他制御」「データ生命周期と互換性保全」を追加し、`LocalFileIssueClient` の実装に基づく永続化契約を明記。関連文書(BD-002, DD-008)とのRev番号を整合 |
+| Rev.1.3 | 2026-08-25 | 開発チーム | レビュー対応: `config.json` がリポジトリ上に実体として存在しない（未実装・将来スキーマ）旨を明記                                                                                                       |
