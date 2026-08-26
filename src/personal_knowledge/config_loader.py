@@ -108,14 +108,10 @@ def load_config(config_path: Path | str | None = None) -> PersonalKnowledgeConfi
             embed_model=api_data.get("embed_model", ApiConfig.embed_model),
         ),
         clustering=ClusteringConfig(
-            similarity_threshold=clustering_data.get(
-                "similarity_threshold", ClusteringConfig.similarity_threshold
-            ),
+            similarity_threshold=clustering_data.get("similarity_threshold", ClusteringConfig.similarity_threshold),
         ),
         filtering=FilteringConfig(
-            blacklisted_keywords=filtering_data.get(
-                "blacklisted_keywords", list(DEFAULT_BLACKLISTED_KEYWORDS)
-            ),
+            blacklisted_keywords=filtering_data.get("blacklisted_keywords", list(DEFAULT_BLACKLISTED_KEYWORDS)),
             llm_system_prompt=filtering_data.get("llm_system_prompt", DEFAULT_LLM_SYSTEM_PROMPT),
         ),
         github=GithubConfig(

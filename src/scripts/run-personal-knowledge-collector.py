@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from personal_knowledge.domain.intent_filter import IntentFilter
 from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
+from personal_knowledge.integration.base_issue_client import BaseIssueClient
 from personal_knowledge.integration.github_client import GitHubIssueClient
 from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
@@ -60,7 +61,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    issue_client = None
+    issue_client: BaseIssueClient | None = None
     if args.backend == "github":
         issue_client = GitHubIssueClient()
     elif args.backend == "local":

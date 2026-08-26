@@ -1,28 +1,31 @@
 import asyncio
-import sys
-import os
-import re
-import json
 from datetime import datetime
 import importlib.util
+import json
+import os
+import re
+import sys
 
 # src/ を module 検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from app.chatmodel import ChatModel
+
 from app.article_builder import ArticleBuilder
+from app.chatmodel import ChatModel
 from app.utils.logger import logger
 
 # 動的インポートでハイフン付きスクリプトを読み込む
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sync_script_path = os.path.join(script_dir, "sync-article-dates.py")
 spec = importlib.util.spec_from_file_location("sync_article_dates", sync_script_path)
+assert spec is not None and spec.loader is not None
 sync_article_dates = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync_article_dates)
 
-async def main():
+
+async def main() -> None:
     sse_url = "http://localhost:8000/sse"
     query = (
         "AWSのAIコードエディタ/開発環境「KIRO」の概要、Cursorとの違い、"
@@ -41,14 +44,13 @@ async def main():
                 await session.initialize()
                 logger.info("✅ ネットワーク経由（SSE）での疎通に成功しました。")
 
-                logger.info(f"Calling tool 'run_deep_research' (timeout=1800s)...")
+                logger.info("Calling tool 'run_deep_research' (timeout=1800s)...")
                 # 20分以上かかる可能性があるため、wait_forで十分に長いタイムアウトを適用
                 result = await asyncio.wait_for(
-                    session.call_tool("run_deep_research", arguments={"query": query}),
-                    timeout=1800.0
+                    session.call_tool("run_deep_research", arguments={"query": query}), timeout=1800.0
                 )
                 logger.info("✅ ツール実行結果を受信しました。")
-                
+
                 # 結果コンテンツの抽出
                 if hasattr(result, "content"):
                     contents = result.content
@@ -61,8 +63,8 @@ async def main():
                     research_text = "\n".join(text_parts)
                 else:
                     research_text = str(result)
-                    
-    except Exception as e:
+
+    except Exception:
         logger.exception("❌ Deep Research実行中にエラーが発生しました:")
         return
 
@@ -77,7 +79,7 @@ async def main():
 
     logger.info("=== STEP 2: ローカルLLMによる構造化JSONデータの生成 ===")
     model = ChatModel()
-    
+
     prompt = f"""
 以下のリサーチ結果をインプットとして、技術質問ノートに掲載するためのJSONデータを生成してください。
 
@@ -132,17 +134,20 @@ async def main():
 """
     history = {
         "messages": [
-            {"role": "system", "content": "あなたは技術記事の構造化JSONデータを生成する優秀なAIアシスタントです。指定されたJSON構造のみを出力してください。"},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": "あなたは技術記事の構造化JSONデータを生成する優秀なAIアシスタントです。指定されたJSON構造のみを出力してください。",
+            },
+            {"role": "user", "content": prompt},
         ]
     }
-    
+
     logger.info("Requesting article data (JSON) from LocalLLM...")
     response = model.generate_response(history)
     if not response or not response.content:
         logger.error("Failed to generate article data from LocalLLM.")
         return
-        
+
     raw_content = response.content
     logger.info(f"Received raw response from LLM (length: {len(raw_content)})")
 
@@ -182,6 +187,7 @@ async def main():
     logger.info("=== STEP 4: sync-article-dates によるインデックス同期 ===")
     sync_article_dates.main()
     logger.info("🎉 E2E MCP-driven article generation completed successfully!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+from google import genai
+
 from personal_knowledge.domain.models import SearchEntry
 from personal_knowledge.domain.semantic_clusterer import SemanticClusterer, _cosine_similarity
 

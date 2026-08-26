@@ -1,30 +1,32 @@
-import os
-import sys
-import re
-import json
-import time
 from datetime import datetime
+import json
+import os
+import re
+import sys
 
 # src/ を module 検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from app.chatmodel import ChatModel
-from app.article_builder import ArticleBuilder
-from app.utils.logger import logger
 import importlib.util
+
+from app.article_builder import ArticleBuilder
+from app.chatmodel import ChatModel
+from app.utils.logger import logger
 
 # 動的インポートでハイフン付きスクリプトを読み込む
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sync_script_path = os.path.join(script_dir, "sync-article-dates.py")
 spec = importlib.util.spec_from_file_location("sync_article_dates", sync_script_path)
+assert spec is not None and spec.loader is not None
 sync_article_dates = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync_article_dates)
 
-def main():
+
+def main() -> None:
     logger.info("Initializing LocalLLM for article generation...")
-    
+
     # ChatModelインスタンスを作成（Ollamaのモデルを使用）
     model = ChatModel()
-    
+
     # JSON構造データ生成用のプロンプト
     prompt = """
 以下のテーマについて、技術質問ノートに掲載するためのJSONデータを生成してください。
@@ -81,21 +83,24 @@ AIガバナンスと企業利用におけるリスク対策（情報漏洩、著
 
     history = {
         "messages": [
-            {"role": "system", "content": "あなたは技術記事の構造化JSONデータを生成する優秀なAIアシスタントです。余計なマークアップや説明を挟まず、指定されたJSON構造のみを出力してください。"},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": "あなたは技術記事の構造化JSONデータを生成する優秀なAIアシスタントです。余計なマークアップや説明を挟まず、指定されたJSON構造のみを出力してください。",
+            },
+            {"role": "user", "content": prompt},
         ]
     }
-    
+
     logger.info("Requesting article data (JSON) from LocalLLM...")
     response = model.generate_response(history)
-    
+
     if not response or not response.content:
         logger.error("Failed to generate article data from LocalLLM.")
         return
-        
+
     raw_content = response.content
     logger.info(f"Received raw response from LLM (length: {len(raw_content)})")
-    
+
     # LLMの出力をログファイルに残す
     try:
         log_dir = "logs"
@@ -111,7 +116,7 @@ AIガバナンスと企業利用におけるリスク対策（情報漏洩、著
         logger.warning(f"Failed to save raw LLM response to log file: {e}")
 
     json_content = raw_content.strip()
-    
+
     # markdownのコードブロック（```json ... ```）で囲まれている場合は中身を抽出
     json_block_match = re.search(r"```json\s*(.*?)\s*```", json_content, re.DOTALL)
     if json_block_match:
@@ -129,14 +134,15 @@ AIガバナンスと企業利用におけるリスク対策（情報漏洩、著
     # ArticleBuilderのインスタンス化と実行
     builder = ArticleBuilder()
     filename = "ai-governance-corporate-risks.html"
-    
+
     logger.info("Building HTML from JSON using ArticleBuilder...")
     builder.save_article(data, filename)
-    
+
     # インデックスを同期
     logger.info("Running sync-article-dates script to update index.html...")
     sync_article_dates.main()
     logger.info("LocalLLM-driven end-to-end JSON generation verification completed!")
+
 
 if __name__ == "__main__":
     main()

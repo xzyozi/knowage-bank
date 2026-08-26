@@ -15,7 +15,7 @@ exclude = [
 
 [lint]
 select = ["E", "F", "W", "I"] # Error, Flake8, Warnings, Isort
-ignore = []
+ignore = ["E501"]
 per-file-ignores = {
     "app/tool/__init__.py" = ["F401"],
     "run.py" = ["E402"],

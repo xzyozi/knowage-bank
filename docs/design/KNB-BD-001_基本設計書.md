@@ -24,8 +24,8 @@ related_documents:
 | :--- | :--- |
 | 文書番号 | KNB-BD-001 |
 | ドキュメント名 | 基本設計書（システム全体アーキテクチャ定義） |
-| 版数 | Rev.1.2 |
-| 改訂日 | 2026-08-15 |
+| 版数 | Rev.1.3 |
+| 改訂日 | 2026-08-27 |
 | 作成日 | 2026-06-14 |
 | 作成者 | 開発チーム |
 
@@ -95,11 +95,18 @@ related_documents:
 │   │   ├── article_builder.py  # JSON/Markdownデータからの記事HTMLビルド・カテゴリ正規化
 │   │   ├── chatmodel.py        # ローカルLLM (Ollama) 接続ラッパー
 │   │   └── config.py           # 環境変数・パス設定
+│   ├── personal_knowledge/     # パーソナル・ナレッジ自動生成パッケージ (KNB-BD-002)
+│   │   ├── dao/                # 複数ブラウザ履歴抽出 (Chromium/Firefox)
+│   │   ├── domain/             # 重複排除・30分セッション解析・Gemini意図判定/クラスタリング
+│   │   ├── integration/        # Issueタスクキュー連携 (GitHub API / ローカルJSON)
+│   │   ├── config_loader.py    # パイプライン設定読み込み
+│   │   └── service.py          # 全体オーケストレーションサービス
 │   └── scripts/
 │       ├── generate-article.py # JSONベース技術記事自動生成スクリプト
 │       ├── sync-github-issues.py # GitHub Issue同期・MCP連携・記事生成パイプライン
-│       └── sync-article-dates.py # 記事作成日同期・index.html再生成
-└── pyproject.toml              # プロジェクト設定と依存関係（jinja2等含む）
+│       ├── sync-article-dates.py # 記事作成日同期・index.html再生成
+│       └── run-personal-knowledge-collector.py # ブラウザ検索履歴収集・セッション解析CLI
+└── pyproject.toml              # プロジェクト設定と依存関係（jinja2, google-genai等含む）
 ```
 
 ## 3. データフロー

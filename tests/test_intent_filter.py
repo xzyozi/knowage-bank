@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+from google import genai
+
 from personal_knowledge.domain.intent_filter import IntentFilter
 
 
