@@ -15,7 +15,9 @@ dependencies = [
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "jinja2>=3.0.0",
-    "mcp>=0.1.0"
+    "mcp>=0.1.0",
+    "httpx>=0.28.1,<0.29.0",
+    "google-genai>=1.73.0,<2.0.0"
 ]
 
 [project.optional-dependencies]
@@ -48,7 +50,7 @@ ignore = []
 
 [tool.ruff.lint.isort]
 # 自分のプロジェクトのパッケージ名を指定（自動ソート時にローカルパッケージとして認識させるため）
-known-first-party = ["src", "app"]
+known-first-party = ["src", "app", "personal_knowledge"]
 
 # ==========================================
 # Type Checker (Mypy)

@@ -35,4 +35,7 @@ dist/
 
 # Local databases and logs
 data/
-logs/
+logs/
+
+# Kiro (エージェント設定・ステアリング等、ローカル環境固有情報を含むため管理対象外)
+.kiro/
