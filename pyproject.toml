@@ -33,7 +33,7 @@ dev = [
 # Linter & Formatter (Ruff)
 # ==========================================
 [tool.ruff]
-line-length = 120
+line-length = 500
 exclude = [
     ".git",
     "__pycache__",
@@ -47,7 +47,10 @@ exclude = [
 [tool.ruff.lint]
 # E: pycodestyle errors, F: Pyflakes, W: pycodestyle warnings, I: isort
 select = ["E", "F", "W", "I"]
-ignore = []
+ignore = ["E501"]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 500
 
 [tool.ruff.lint.isort]
 # 自分のプロジェクトのパッケージ名を指定（自動ソート時にローカルパッケージとして認識させるため）

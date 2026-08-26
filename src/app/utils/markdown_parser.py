@@ -1,11 +1,13 @@
 import re
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 
 class FlexibleMarkdownParser:
     """
     任意の Markdown テキストを解析し、YAML Frontmatter メタデータと
     site.css に適合する HTML コンポーネント群へ柔軟に変換するパーサー
     """
+
     def __init__(self, markdown_text: str):
         self.raw_text = markdown_text.strip() if markdown_text else ""
         self.metadata, self.body_text = self._extract_frontmatter(self.raw_text)
@@ -14,7 +16,7 @@ class FlexibleMarkdownParser:
         """YAML Frontmatter (--- ... ---) を抽出・パース"""
         metadata: Dict[str, Any] = {}
         body = text
-        
+
         if text.startswith("---"):
             parts = text.split("---", 2)
             if len(parts) >= 3:
@@ -47,7 +49,7 @@ class FlexibleMarkdownParser:
         key_points = []
         kp_pattern = r"^##\s*(?:要点|まとめ|Key Points)\s*$\n((?:[-*+]\s+.*\n?)+)"
         kp_match = re.search(kp_pattern, text, re.MULTILINE | re.IGNORECASE)
-        
+
         clean_text = text
         if kp_match:
             lines = kp_match.group(1).strip().splitlines()
@@ -56,20 +58,25 @@ class FlexibleMarkdownParser:
                 if line_str:
                     key_points.append(line_str)
             clean_text = re.sub(kp_pattern, "", text, flags=re.MULTILINE | re.IGNORECASE).strip()
-            
+
         return key_points, clean_text
 
     def _extract_lead(self, text: str) -> Tuple[str, str]:
         """本文先頭の最初の段落をリード文 (lead) として抽出"""
         lines = text.strip().splitlines()
-        lead_lines = []
-        body_lines = []
+        lead_lines: list[str] = []
+        body_lines: list[str] = []
         in_lead = True
-        
+
         for line in lines:
             stripped = line.strip()
             if in_lead:
-                if stripped.startswith("#") or stripped.startswith("- ") or stripped.startswith("* ") or re.match(r"^\d+\.", stripped):
+                if (
+                    stripped.startswith("#")
+                    or stripped.startswith("- ")
+                    or stripped.startswith("* ")
+                    or re.match(r"^\d+\.", stripped)
+                ):
                     in_lead = False
                     body_lines.append(line)
                 elif not stripped:
@@ -79,7 +86,7 @@ class FlexibleMarkdownParser:
                     lead_lines.append(stripped)
             else:
                 body_lines.append(line)
-                
+
         lead_text = " ".join(lead_lines)
         return lead_text, "\n".join(body_lines).strip()
 
@@ -88,15 +95,15 @@ class FlexibleMarkdownParser:
         qa_list = []
         qa_pattern = r"(?:Q|質問)[:：]\s*(.*?)\n+(?:A|回答)[:：]\s*(.*?)(?=\n\n|\n#|\Z)"
         qa_matches = list(re.finditer(qa_pattern, text, re.DOTALL | re.IGNORECASE))
-        
+
         for m in qa_matches:
             q = m.group(1).strip().replace("\n", " ")
             a = m.group(2).strip().replace("\n", " ")
             qa_list.append({"q": q, "a": a})
-        
+
         # 本文からの除去
         clean_text = re.sub(qa_pattern, "", text, flags=re.DOTALL | re.IGNORECASE).strip()
-        
+
         return qa_list, clean_text
 
     def _extract_references(self, text: str) -> List[Dict[str, str]]:
@@ -120,16 +127,16 @@ class FlexibleMarkdownParser:
             return ""
 
         lines = text.splitlines()
-        html_lines = []
+        html_lines: list[str] = []
         in_code_block = False
         code_lang = ""
-        code_lines = []
+        code_lines: list[str] = []
         in_ul = False
         in_ol = False
         in_table = False
-        table_rows = []
+        table_rows: list[str] = []
 
-        def close_lists_and_table():
+        def close_lists_and_table() -> list[str]:
             nonlocal in_ul, in_ol, in_table, table_rows
             res = []
             if in_ul:
@@ -157,7 +164,7 @@ class FlexibleMarkdownParser:
                     else:
                         code_content = code_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         lang_class = f' class="language-{code_lang}"' if code_lang else ""
-                        html_lines.append(f'<pre><code{lang_class}>{code_content}</code></pre>')
+                        html_lines.append(f"<pre><code{lang_class}>{code_content}</code></pre>")
                     in_code_block = False
                     code_lines = []
                 else:
@@ -235,7 +242,7 @@ class FlexibleMarkdownParser:
             return ""
 
         table_html = ['<table class="figure">']
-        
+
         def parse_row_cells(row_str: str) -> List[str]:
             cells = [c.strip() for c in row_str.strip("|").split("|")]
             return cells
@@ -272,7 +279,9 @@ class FlexibleMarkdownParser:
         # 太字 **text**
         text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
         # リンク [text](url)
-        text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', text)
+        text = re.sub(
+            r"\[([^\]]+)\]\((https?://[^\)]+)\)", r'<a href="\2" target="_blank" rel="noopener noreferrer">\1</a>', text
+        )
         # インラインコード `code`
         text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
         return text
@@ -281,7 +290,7 @@ class FlexibleMarkdownParser:
         """パース完了オブジェクトを返却"""
         qa, body_after_qa = self._extract_qa_blocks(self.body_text)
         key_points, body_after_kp = self._extract_key_points(body_after_qa)
-        
+
         # lead が Frontmatter にない場合、本文先頭段落から自動抽出
         lead = self.metadata.get("lead", "")
         if not lead:

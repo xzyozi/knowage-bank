@@ -156,11 +156,7 @@ class PersonalKnowledgeService:
         raw_entries = self.collect_raw_entries()
         deduped, sessions = self.process_entries_to_sessions(raw_entries)
 
-        open_issues = (
-            mock_open_issues
-            if mock_open_issues is not None
-            else self.issue_client.get_open_issues()
-        )
+        open_issues = mock_open_issues if mock_open_issues is not None else self.issue_client.get_open_issues()
 
         decisions: list[RoutingDecision] = []
         created_count = 0
@@ -172,9 +168,7 @@ class PersonalKnowledgeService:
 
             if not dry_run:
                 if decision.action == "add_comment" and decision.target_issue_number:
-                    success = self.issue_client.add_comment(
-                        decision.target_issue_number, decision.body
-                    )
+                    success = self.issue_client.add_comment(decision.target_issue_number, decision.body)
                     if success:
                         commented_count += 1
                 elif decision.action == "create_issue":

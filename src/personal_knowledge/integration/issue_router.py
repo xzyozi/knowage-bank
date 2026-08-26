@@ -163,9 +163,7 @@ class IssueRouter:
         union_len = len(tokens_a.union(tokens_b))
         return intersection_len / union_len if union_len > 0 else 0.0
 
-    def evaluate_routing(
-        self, session: SearchSession, open_issues: list[dict[str, Any]]
-    ) -> RoutingDecision:
+    def evaluate_routing(self, session: SearchSession, open_issues: list[dict[str, Any]]) -> RoutingDecision:
         """セッションと Open 状態の Issue 群を照合し、起票または追記の決定を行う。
 
         Args:

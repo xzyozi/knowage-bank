@@ -77,17 +77,13 @@ class BrowserHistoryDAO(ABC):
                     shutil.copy2(target_path, temp_db_path)
                 except (IOError, OSError, shutil.Error) as copy_err:
                     # ロック競合や権限エラー時は例外を握り潰し（サイレントエラー）、空リストを返す
-                    logger.warning(
-                        f"Silent skip: Failed to copy {self.browser_name} history DB: {copy_err}"
-                    )
+                    logger.warning(f"Silent skip: Failed to copy {self.browser_name} history DB: {copy_err}")
                     return []
 
                 return self._extract_from_sqlite(temp_db_path, limit=limit)
         except Exception as e:
             # 想定外エラー時もサイレントに処理し、次回の定期実行に委ねる
-            logger.warning(
-                f"Silent skip: Unexpected error while reading {self.browser_name} history DB: {e}"
-            )
+            logger.warning(f"Silent skip: Unexpected error while reading {self.browser_name} history DB: {e}")
             return []
 
     @abstractmethod

@@ -1,16 +1,24 @@
-import os
-import json
 from datetime import datetime
+import json
+import os
+from typing import Any
+
 from jinja2 import Template
-from app.utils.logger import logger
-from app.utils.markdown_parser import FlexibleMarkdownParser
-from app.utils.markdown_cleaner import parse_reference_footer
+
 from app.utils.citation_processor import apply_citations
+from app.utils.logger import logger
+from app.utils.markdown_cleaner import parse_reference_footer
+from app.utils.markdown_parser import FlexibleMarkdownParser
+
 
 class ArticleBuilder:
     def __init__(self) -> None:
-        self.config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "category_config.json")
-        self.template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "article_template.html")
+        self.config_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "category_config.json"
+        )
+        self.template_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "templates", "article_template.html"
+        )
         self.clusters = self._load_category_config()
         self.template_content = self._load_template()
 
@@ -56,36 +64,38 @@ class ArticleBuilder:
     def build_article_html(self, data: dict) -> str:
         """JSONデータまたは任意のMarkdownデータからHTML文字列をパイプライン（Stage 0.5〜5）生成する"""
         t = Template(self.template_content)
-        
+
         # 自由形式の Markdown テキストが直接渡された場合
         raw_markdown = data.get("markdown_text") or data.get("markdown")
-        parsed_data = {}
-        raw_refs = {}
-        ref_list = []
+        parsed_data: dict[str, Any] = {}
+        raw_refs: dict[Any, Any] = {}
+        ref_list: list[Any] = []
         body_html = data.get("body_html", "")
 
         if raw_markdown:
             # Stage 0.5: クレンジング & 参考文献フッターの分離
             clean_body_md, raw_refs = parse_reference_footer(raw_markdown)
-            
+
             # Stage 3a: Markdown -> HTML 基本変換
             parser = FlexibleMarkdownParser(clean_body_md)
             parsed_data = parser.parse()
             body_html = parsed_data.get("body_html", "")
             raw_lead = data.get("lead") or parsed_data.get("lead", "")
-            
+
             # Stage 3b: LLM等の citations_keep / citation_labels の適用とリナンバリング
             citations_keep = data.get("citations_keep", [])
             citation_labels = data.get("citation_labels", {})
-            
-            body_html, lead_text, ref_list = apply_citations(body_html, raw_refs, citations_keep, citation_labels, raw_lead)
+
+            body_html, lead_text, ref_list = apply_citations(
+                body_html, raw_refs, citations_keep, citation_labels, raw_lead
+            )
 
         # メタデータ・項目の統合
         raw_eyebrow = data.get("eyebrow") or parsed_data.get("eyebrow", "未分類")
         normalized_eyebrow = self.normalize_eyebrow(raw_eyebrow)
-        
+
         now = datetime.now()
-        
+
         render_data = {
             "title": data.get("title") or parsed_data.get("title", "無題の記事"),
             "eyebrow": normalized_eyebrow,
@@ -97,21 +107,21 @@ class ArticleBuilder:
             "body_html": body_html,
             "key_points": data.get("key_points") or parsed_data.get("key_points", []),
             "references": data.get("references") or parsed_data.get("references", []),
-            "ref_list": ref_list or data.get("ref_list", [])
+            "ref_list": ref_list or data.get("ref_list", []),
         }
-        
+
         return t.render(render_data)
 
     def save_article(self, data: dict, filename: str) -> str:
         """HTML記事をビルドして保存する"""
         html_str = self.build_article_html(data)
-        
+
         articles_dir = os.path.join("public", "articles")
         os.makedirs(articles_dir, exist_ok=True)
-        
+
         output_path = os.path.join(articles_dir, filename)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_str)
-            
+
         logger.info(f"Article saved and built successfully: {output_path}")
         return output_path

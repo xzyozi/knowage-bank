@@ -14,13 +14,16 @@ from app.utils.logger import logger  # ロガーオブジェクトを直接イ�
 
 class AbstractChatModel(ABC):
     """チャットモデルの抽象基底クラス"""
+
     @abstractmethod
     def get_response(self, prompt: str) -> str:
         """プロンプトに対して応答を生成します。"""
         pass
 
+
 class OllamaModel(AbstractChatModel):
     """OllamaをローカルAPI経由で使用するモデル"""
+
     def __init__(self, model_name: str, base_url: str):
         self.model_name = model_name
         self.base_url = base_url
@@ -44,20 +47,23 @@ class OllamaModel(AbstractChatModel):
             logger.error(f"Ollama API request failed: {e}")
             raise e
 
+
 def _initialize_model() -> AbstractChatModel:
     """設定に基づいて適切なチャットモデルのインスタンスを返すファクトリ関数"""
-    model_name = config.KNOWAGE_BANK_MODEL
-    base_url = config.OLLAMA_BASE_URL
-    
+    model_name = config.KNOWAGE_BANK_MODEL or "deepseek-r1:8b"
+    base_url = config.OLLAMA_BASE_URL or "http://localhost:11434/v1"
+
     # ollama/ プレフィックスがあれば除去
     clean_model_name = model_name
     if model_name.startswith("ollama/"):
         clean_model_name = model_name[7:]
-        
+
     logger.info(f"Using Ollama model based on configuration: {clean_model_name}")
     return OllamaModel(model_name=clean_model_name, base_url=base_url)
 
+
 _lazy_chat_model_instance: Optional[AbstractChatModel] = None
+
 
 def get_chat_model_instance() -> AbstractChatModel:
     """設定に基づいて適切なチャットモデルのインスタンスを遅延初期化して返す"""
@@ -66,36 +72,40 @@ def get_chat_model_instance() -> AbstractChatModel:
         _lazy_chat_model_instance = _initialize_model()
     return _lazy_chat_model_instance
 
+
 class _LazyChatModelProxy(AbstractChatModel):
     """インポート時の自動Ollama初期化を防ぎ、呼び出し時に初めて初期化するプロキシ"""
+
     def get_response(self, prompt: str) -> str:
         return get_chat_model_instance().get_response(prompt)
+
 
 # モジュールインポート時には即時初期化を行わず、遅延プロキシとして提供
 chat_model_instance: AbstractChatModel = _LazyChatModelProxy()
 
+
 class ChatModel:
-    def __init__(self,
-                 model_name: Optional[str] = None,
-                 api_key: Optional[str] = None,
-                 base_url: Optional[str] = None,
-                 site_url: str = "",
-                 site_name: str = ""
-                 ) -> None:
-        raw_model = model_name or config.KNOWAGE_BANK_MODEL
-        
+    def __init__(
+        self,
+        model_name: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        site_url: str = "",
+        site_name: str = "",
+    ) -> None:
+        raw_model = model_name or config.KNOWAGE_BANK_MODEL or "deepseek-r1:8b"
+        effective_base_url = base_url or config.OLLAMA_BASE_URL or "http://localhost:11434/v1"
+
         # ollama/ プレフィックスのハンドリング
         self.model_name = raw_model
         if raw_model.startswith("ollama/"):
             self.model_name = raw_model[7:]
             api_key = api_key or "ollama"
-            base_url = base_url or config.OLLAMA_BASE_URL
         else:
             api_key = api_key or "ollama"
-            base_url = base_url or config.OLLAMA_BASE_URL
 
         # OpenAI互換エンドポイントの補正
-        compat_url = base_url if "/v1" in base_url else f"{base_url.rstrip('/')}/v1"
+        compat_url = effective_base_url if "/v1" in effective_base_url else f"{effective_base_url.rstrip('/')}/v1"
 
         self.client = openai.OpenAI(
             base_url=compat_url,
@@ -109,7 +119,9 @@ class ChatModel:
 
         # システムプロンプト（外部ファイルからロード、失敗時はフォールバック）
         # src/app/chatmodel.py から 2階層上がリポジトリルートとなり、そこから prompts/system_prompt.txt を参照
-        prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "prompts", "system_prompt.txt")
+        prompt_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "prompts", "system_prompt.txt"
+        )
         if not os.path.exists(prompt_path):
             # ルートからの相対パス等、いくつかのフォールバックパスを試す
             prompt_path = "prompts/system_prompt.txt"
@@ -122,17 +134,16 @@ class ChatModel:
             logger.warning(f"Failed to load system prompt from {prompt_path}, using minimum default. Error: {e}")
             self.system_prompt = "あなたは優秀なAIアシスタントです。明確で具体的な情報を日本語で提供してください。"
 
-    def generate_response(self, history: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Optional[openai.types.chat.ChatCompletionMessage]:
+    def generate_response(
+        self, history: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Optional[openai.types.chat.ChatCompletionMessage]:
         max_retries = 3
         retry_wait_seconds = 15
 
         # Ollama用のコンテキスト制限拡張設定を extra_body に差し込む
         extra_body_params = dict(self.extra_body)
         if "options" not in extra_body_params:
-            extra_body_params["options"] = {
-                "num_ctx": 8192,
-                "num_predict": 4096
-            }
+            extra_body_params["options"] = {"num_ctx": 8192, "num_predict": 4096}
 
         api_params = {
             "model": self.model_name,
@@ -215,6 +226,7 @@ class ChatAPIConfig:
     api_key: str
     base_url: str
 
+
 class ChatConfigManager:
     DEFAULT_CONFIG_PATH = "config/chat_api_config.json"
 
@@ -228,13 +240,7 @@ class ChatConfigManager:
     def _create_default_config(self, path: str) -> None:
         default = {
             "providers": {
-                "openai": [
-                    {
-                        "model_name": "gpt-4",
-                        "api_key": "your-api-key",
-                        "base_url": "https://api.openai.com/v1"
-                    }
-                ]
+                "openai": [{"model_name": "gpt-4", "api_key": "your-api-key", "base_url": "https://api.openai.com/v1"}]
             }
         }
         with open(path, "w", encoding="utf-8") as f:
