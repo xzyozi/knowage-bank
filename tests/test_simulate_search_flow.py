@@ -12,6 +12,8 @@ from scripts.simulate_search_flow import (
     create_sample_search_history,
     run_simulation,
 )
+from personal_knowledge.domain.analyzer import SessionAnalyzer
+from personal_knowledge.integration.issue_router import IssueRouter
 from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
 
@@ -39,14 +41,31 @@ def test_simulate_search_flow_pipeline() -> None:
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
 
     assert result.raw_entries_count == 8
-    assert result.deduped_entries_count == 7  # 1件重複排除
-    assert result.sessions_count == 2  # 2セッション抽出 (単発天気ログは最小2件を満たさず除外)
+    assert result.deduped_entries_count == 7
+    assert result.sessions_count == 2
     assert len(result.decisions) == 2
-    # dry_run なので実際のカウントは 0
     assert result.created_issues_count == 0
     assert result.added_comments_count == 0
 
 
-def test_run_simulation_execution(caplog) -> None:
+def test_custom_parameters() -> None:
+    """min_queries=1 に指定した際、単発検索 (今日の天気) も選定されることの検証。"""
+    mock_entries = create_sample_search_history()
+    mock_issues = create_sample_open_issues()
+
+    mock_dao = MockHistoryDAO(mock_entries)
+    # min_queries=1 に変更
+    analyzer = SessionAnalyzer(session_gap_seconds=1800, min_queries=1)
+    service = PersonalKnowledgeService(
+        daos=[mock_dao],
+        issue_client=LocalFileIssueClient(),
+        analyzer=analyzer,
+    )
+
+    result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
+    assert result.sessions_count == 3  # 天気検索もセッションとして選抜される
+
+
+def test_run_simulation_execution() -> None:
     """run_simulation 関数がエラーなく完了することの検証。"""
-    run_simulation()
+    run_simulation(session_gap_seconds=1800, min_queries=2, similarity_threshold=0.3)

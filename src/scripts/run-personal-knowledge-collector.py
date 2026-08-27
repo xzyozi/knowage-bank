@@ -11,10 +11,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from dotenv import load_dotenv
 
+from personal_knowledge.domain.analyzer import SessionAnalyzer
+from personal_knowledge.domain.deduplicator import SessionDeduplicator
 from personal_knowledge.domain.intent_filter import IntentFilter
 from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
 from personal_knowledge.integration.base_issue_client import BaseIssueClient
 from personal_knowledge.integration.github_client import GitHubIssueClient
+from personal_knowledge.integration.issue_router import IssueRouter
 from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
 
@@ -59,6 +62,32 @@ def main() -> None:
             "GEMINI_API_KEY 環境変数の設定が必要。"
         ),
     )
+
+    # --- セッション選定チューニング用パラメータ ---
+    parser.add_argument(
+        "--session-gap-seconds",
+        type=int,
+        default=1800,
+        help="同一セッションとみなす検索間隔の最大秒数 (デフォルト: 1800秒 = 30分)",
+    )
+    parser.add_argument(
+        "--min-queries",
+        type=int,
+        default=2,
+        help="セッションとして採択する最小検索クエリ件数 (デフォルト: 2件)",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.3,
+        help="既存Issue追記判定の類似度閾値 0.0〜1.0 (デフォルト: 0.3)",
+    )
+    parser.add_argument(
+        "--dedup-window-seconds",
+        type=int,
+        default=300,
+        help="同一キーワードの重複排除を行う時間ウィンドウ秒数 (デフォルト: 300秒 = 5分)",
+    )
     args = parser.parse_args()
 
     issue_client: BaseIssueClient | None = None
@@ -70,14 +99,24 @@ def main() -> None:
     intent_filter = IntentFilter() if args.use_gemini else None
     semantic_clusterer = SemanticClusterer() if args.use_gemini else None
 
+    # カスタム選定パラメータをコンポーネントに反映
+    deduplicator = SessionDeduplicator(time_window_seconds=args.dedup_window_seconds)
+    analyzer = SessionAnalyzer(session_gap_seconds=args.session_gap_seconds, min_queries=args.min_queries)
+    router = IssueRouter(similarity_threshold=args.similarity_threshold)
+
     service = PersonalKnowledgeService(
         issue_client=issue_client,
+        deduplicator=deduplicator,
+        analyzer=analyzer,
+        router=router,
         intent_filter=intent_filter,
         semantic_clusterer=semantic_clusterer,
     )
     logger.info(
         "Starting Personal Knowledge Collection & Routing pipeline "
-        f"(backend: {service.issue_client.__class__.__name__})..."
+        f"(backend: {service.issue_client.__class__.__name__}, "
+        f"session_gap: {args.session_gap_seconds}s, min_queries: {args.min_queries}, "
+        f"similarity_threshold: {args.similarity_threshold})..."
     )
 
     # 収集と解析を実行

@@ -1,5 +1,6 @@
 """検索履歴の流れを模擬（シミュレート）し、実際に選ばれるナレッジ・クエリを分かりやすく出力するスクリプト。"""
 
+import argparse
 from datetime import datetime, timedelta, timezone
 import logging
 import os
@@ -11,7 +12,10 @@ from typing import Any
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from personal_knowledge.dao.base_dao import BrowserHistoryDAO
-from personal_knowledge.domain.models import SearchEntry, SearchSession
+from personal_knowledge.domain.analyzer import SessionAnalyzer
+from personal_knowledge.domain.deduplicator import SessionDeduplicator
+from personal_knowledge.domain.models import SearchEntry
+from personal_knowledge.integration.issue_router import IssueRouter
 from personal_knowledge.integration.local_file_client import LocalFileIssueClient
 from personal_knowledge.service import PersonalKnowledgeService
 
@@ -50,11 +54,11 @@ def create_sample_search_history() -> list[SearchEntry]:
     """シミュレーション用のサンプル検索履歴データを生成する。"""
     now = datetime.now(timezone.utc)
 
-    # シナリオ1: Python Dataclass の調査 (既存Issue #101 とマッチして選ばれる想定)
+    # シナリオ1: Python Dataclass の調査
     t1 = now - timedelta(hours=3)
     entries_scene1 = [
         SearchEntry(timestamp=t1, keyword="python dataclass 使い方", source_browser="chrome"),
-        SearchEntry(timestamp=t1 + timedelta(minutes=2), keyword="python dataclass 使い方", source_browser="chrome"),  # 重複排除対象
+        SearchEntry(timestamp=t1 + timedelta(minutes=2), keyword="python dataclass 使い方", source_browser="chrome"),
         SearchEntry(
             timestamp=t1 + timedelta(minutes=4),
             keyword="python dataclass field default_factory",
@@ -67,7 +71,7 @@ def create_sample_search_history() -> list[SearchEntry]:
         ),
     ]
 
-    # シナリオ2: FastAPI 非同期処理の調査 (新規Issueとして選ばれる想定)
+    # シナリオ2: FastAPI 非同期処理の調査
     t2 = now - timedelta(hours=1)
     entries_scene2 = [
         SearchEntry(
@@ -87,7 +91,7 @@ def create_sample_search_history() -> list[SearchEntry]:
         ),
     ]
 
-    # シナリオ3: 単発の検索 (ノイズ/セッション化で選ばれず除外される想定)
+    # シナリオ3: 単発の検索 (ノイズ/設定によって選定対象になるかどうか変わる)
     t3 = now - timedelta(minutes=10)
     entries_scene3 = [
         SearchEntry(timestamp=t3, keyword="今日の天気 東京", source_browser="chrome"),
@@ -108,11 +112,21 @@ def create_sample_open_issues() -> list[dict[str, Any]]:
     ]
 
 
-def run_simulation() -> None:
+def run_simulation(
+    session_gap_seconds: int = 1800,
+    min_queries: int = 2,
+    similarity_threshold: float = 0.3,
+    dedup_window_seconds: int = 300,
+) -> None:
     """検索履歴処理のパイプラインシミュレーションを実行する。"""
     logger.info("=" * 80)
-    logger.info("🔍 【STEP 1】 収集された全検索ログ (ブラウザ履歴から読み込まれた生ログ)")
+    logger.info(
+        f"⚙️  【設定パラメータ】 session_gap={session_gap_seconds}s, min_queries={min_queries}, "
+        f"similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
+    )
     logger.info("=" * 80)
+
+    logger.info("\n🔍 【STEP 1】 収集された全検索ログ (ブラウザ履歴から読み込まれた生ログ)")
     mock_entries = create_sample_search_history()
     for idx, entry in enumerate(mock_entries, 1):
         logger.info(
@@ -127,11 +141,18 @@ def run_simulation() -> None:
     for issue in mock_issues:
         logger.info(f"  Existing Issue #{issue['number']}: {issue['title']}")
 
-    # サービス構築
+    # カスタム選定パラメータを組み込んだサービスインスタンス
     mock_dao = MockHistoryDAO(mock_entries)
+    deduplicator = SessionDeduplicator(time_window_seconds=dedup_window_seconds)
+    analyzer = SessionAnalyzer(session_gap_seconds=session_gap_seconds, min_queries=min_queries)
+    router = IssueRouter(similarity_threshold=similarity_threshold)
+
     service = PersonalKnowledgeService(
         daos=[mock_dao],
         issue_client=LocalFileIssueClient(),
+        deduplicator=deduplicator,
+        analyzer=analyzer,
+        router=router,
     )
 
     # ステップ実行で途中経過も取得
@@ -149,12 +170,12 @@ def run_simulation() -> None:
         if (entry.timestamp, entry.keyword) not in deduped_set:
             logger.info(
                 f"  ❌ [重複除外]    「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
-                f"       └ 理由: 5分以内の同一クエリ重複のためマージ"
+                f"       └ 理由: {dedup_window_seconds}秒以内の同一クエリ重複のためマージ"
             )
         elif entry.keyword not in session_queries_set:
             logger.info(
                 f"  ❌ [ノイズ除外]  「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
-                f"       └ 理由: 連続した技術調査セッションを満たさない単発ログ (最小2件未満)"
+                f"       └ 理由: 連続した技術調査セッションを満たさない単発ログ (最小{min_queries}件未満)"
             )
 
     logger.info("\n" + "=" * 80)
@@ -163,7 +184,7 @@ def run_simulation() -> None:
 
     for idx, (session, decision) in enumerate(zip(sessions, result.decisions), 1):
         logger.info(f"\n[選出ナレッジ #{idx}] --------------------------------------------------")
-        
+
         if decision.action == "create_issue":
             logger.info("  📌 決定アクション:   【✨ 新規Issueとして選出】")
             logger.info(f"  🏷️  生成タイトル:     {decision.title}")
@@ -171,7 +192,7 @@ def run_simulation() -> None:
         else:
             logger.info("  📌 決定アクション:   【📝 既存Issueへのコメント追記として選出】")
             logger.info(f"  🏷️  対象Issue:        #{decision.target_issue_number}")
-            logger.info(f"  📊 語彙類似度スコア: {decision.similarity_score:.4f} (閾値 {service.router.similarity_threshold} 以上)")
+            logger.info(f"  📊 語彙類似度スコア: {decision.similarity_score:.4f} (閾値 {similarity_threshold} 以上)")
             logger.info("  💡 選定理由:         既存Issueトピックと類似度が高いため、関連ナレッジとして追記統合")
 
         logger.info("\n  🔍 採用・選定された検索クエリ一覧:")
@@ -194,5 +215,42 @@ def run_simulation() -> None:
     logger.info("\n✅ シミュレーション完了: Issueへの書き込みは一切行われていません (dry_run)。")
 
 
+def main() -> None:
+    """CLI エントリーポイント。"""
+    parser = argparse.ArgumentParser(description="検索履歴の選定シミュレーション実行スクリプト")
+    parser.add_argument(
+        "--session-gap-seconds",
+        type=int,
+        default=1800,
+        help="同一セッションとみなす検索間隔の最大秒数 (デフォルト: 1800秒 = 30分)",
+    )
+    parser.add_argument(
+        "--min-queries",
+        type=int,
+        default=2,
+        help="セッションとして採択する最小検索クエリ件数 (デフォルト: 2件)",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.3,
+        help="既存Issue追記判定の類似度閾値 (デフォルト: 0.3)",
+    )
+    parser.add_argument(
+        "--dedup-window-seconds",
+        type=int,
+        default=300,
+        help="同一キーワードの重複排除を行う時間ウィンドウ秒数 (デフォルト: 300秒 = 5分)",
+    )
+    args = parser.parse_args()
+
+    run_simulation(
+        session_gap_seconds=args.session_gap_seconds,
+        min_queries=args.min_queries,
+        similarity_threshold=args.similarity_threshold,
+        dedup_window_seconds=args.dedup_window_seconds,
+    )
+
+
 if __name__ == "__main__":
-    run_simulation()
+    main()
