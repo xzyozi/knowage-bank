@@ -79,7 +79,14 @@ def main() -> None:
         "Starting Personal Knowledge Collection & Routing pipeline "
         f"(backend: {service.issue_client.__class__.__name__})..."
     )
-    result = service.run_pipeline(dry_run=args.dry_run)
+
+    # 収集と解析を実行
+    raw_entries = service.collect_raw_entries()
+    deduped_entries, sessions = service.process_entries_to_sessions(raw_entries)
+
+    # Issueルーティング
+    open_issues = service.issue_client.get_open_issues()
+    result = service.run_pipeline(dry_run=args.dry_run, mock_open_issues=open_issues)
 
     summary = {
         "raw_entries_count": result.raw_entries_count,
@@ -93,18 +100,37 @@ def main() -> None:
                 "target_issue_number": d.target_issue_number,
                 "similarity_score": round(d.similarity_score, 4),
                 "title": d.title,
+                "queries": session.queries if idx < len(sessions) else [],
             }
-            for d in result.decisions
+            for idx, (d, session) in enumerate(zip(result.decisions, sessions))
         ],
     }
 
     if args.json_output:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     else:
+        logger.info("\n" + "=" * 80)
+        logger.info("🎯 【採択（選定）されたナレッジ一覧】 実際にナレッジ/Issueとして選ばれたセッション")
+        logger.info("=" * 80)
+
+        for idx, (decision, session) in enumerate(zip(result.decisions, sessions), 1):
+            if decision.action == "create_issue":
+                logger.info(f"\n[選出ナレッジ #{idx}] 📌 【新規Issueとして選定】: {decision.title}")
+            else:
+                logger.info(
+                    f"\n[選出ナレッジ #{idx}] 📌 【既存Issue #{decision.target_issue_number} への追記として選定】 "
+                    f"(類似度: {decision.similarity_score:.4f})"
+                )
+
+            logger.info("   選定キーワード:")
+            for q_idx, q in enumerate(session.queries, 1):
+                logger.info(f"     {q_idx}. {q}")
+
+        logger.info("\n" + "=" * 80)
         logger.info(
-            f"Pipeline completed: Raw={result.raw_entries_count}, "
+            f"Pipeline completed (dry_run={args.dry_run}): Raw={result.raw_entries_count}, "
             f"Deduped={result.deduped_entries_count}, "
-            f"Sessions={result.sessions_count}, "
+            f"Selected Sessions={result.sessions_count}, "
             f"Created={result.created_issues_count}, "
             f"Commented={result.added_comments_count}"
         )
