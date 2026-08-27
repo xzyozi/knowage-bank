@@ -234,8 +234,8 @@ class FlexibleMarkdownParser:
         if not rows:
             return ""
 
-        table_html = ['<table class="figure">']
-        
+        table_html = ['<div class="figure table-wrapper">', '  <table>']
+
         def parse_row_cells(row_str: str) -> List[str]:
             cells = [c.strip() for c in row_str.strip("|").split("|")]
             return cells
@@ -263,7 +263,8 @@ class FlexibleMarkdownParser:
                 table_html.append(f"      <td>{cell_html}</td>")
             table_html.append("    </tr>")
         table_html.append("  </tbody>")
-        table_html.append("</table>")
+        table_html.append("  </table>")
+        table_html.append("</div>")
 
         return "\n".join(table_html)
 
