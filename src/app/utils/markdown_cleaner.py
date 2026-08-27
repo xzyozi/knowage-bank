@@ -35,8 +35,9 @@ def parse_reference_footer(md_text: str) -> Tuple[str, Dict[int, Dict[str, str]]
     body_md = md_text[:first_match_start].strip()
 
     # 目次セクション (TOC: 階層・インデント・サブ項目を含むリスト全般) の完全クレンジング
+    # 見出しと目次リストの間にある空行も許容する。
     body_md = re.sub(
-        r"^(?:#+)?\s*(?:目次|Table of Contents)\s*$\n(?:(?:\s*|\t*)(?:\d+(?:\.\d+)*|[-*+])\s+.*\n?)+",
+        r"^(?:#+)?\s*(?:目次|Table of Contents)\s*$\n(?:[ \t]*\n)*(?:(?:[ \t]*)(?:\d+(?:\.\d+)*\.?|[-*+])\s+.*(?:\n|$))+",
         "",
         body_md,
         flags=re.MULTILINE | re.IGNORECASE,
@@ -49,6 +50,9 @@ def parse_reference_footer(md_text: str) -> Tuple[str, Dict[int, Dict[str, str]]
     body_md = re.sub(
         r"^(?:#+)?\s*調査概要\s*$\n(?:.*\n)*?(?=---|\n#|\Z)", "", body_md, flags=re.MULTILINE | re.IGNORECASE
     )
+
+    # 末尾の参考文献見出しは、参考文献ブロックを分離した後では空になるため除去する。
+    body_md = re.sub(r"\n(?:#+)?\s*(?:出典|参考文献|参考資料)\s*$", "", body_md, flags=re.IGNORECASE)
 
     # 区切り線の連続除去
     body_md = re.sub(r"^(?:\s*---\s*\n)+", "", body_md, flags=re.MULTILINE)

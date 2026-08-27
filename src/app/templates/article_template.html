@@ -17,13 +17,15 @@
 
     <main class="page">
         <article>
-            
+
             <!-- ① ヒーローエリア -->
             <header class="hero">
                 <p class="eyebrow">{{ eyebrow }}</p>
                 <h1>{{ title }}</h1>
                 <p class="article-created"><time datetime="{{ date_str }}">作成日: {{ display_date }}</time></p>
+                {% if lead %}
                 <p class="lead">{{ lead }}</p>
+                {% endif %}
             </header>
 
             <!-- ② 簡潔なQ&Aセクション (存在する場合のみ) -->
@@ -50,7 +52,7 @@
             {% for para in sec.paragraphs %}
             <p>{{ para }}</p>
             {% endfor %}
-            
+
             {% if sec.subsections %}
             {% for sub in sec.subsections %}
             <h3>{{ sub.h3 }}</h3>

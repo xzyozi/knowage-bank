@@ -1,6 +1,6 @@
-import pytest
-from app.utils.markdown_parser import FlexibleMarkdownParser
 from app.article_builder import ArticleBuilder
+from app.utils.markdown_parser import FlexibleMarkdownParser
+
 
 def test_flexible_markdown_parser_frontmatter():
     md_text = """---
@@ -115,8 +115,9 @@ graph TD
 """
     parser = FlexibleMarkdownParser(md_text)
     data = parser.parse()
-    
-    assert '<table class="figure">' in data["body_html"]
+
+    assert '<div class="figure table-wrapper">' in data["body_html"]
+    assert '<table>' in data["body_html"]
     assert '<th scope="col">パターン</th>' in data["body_html"]
     assert '<td><strong>線形</strong></td>' in data["body_html"]
     assert '<div class="mermaid">' in data["body_html"]
