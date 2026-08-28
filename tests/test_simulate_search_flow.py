@@ -54,7 +54,6 @@ def test_custom_parameters() -> None:
     mock_issues = create_sample_open_issues()
 
     mock_dao = MockHistoryDAO(mock_entries)
-    # min_queries=1 に変更
     analyzer = SessionAnalyzer(session_gap_seconds=1800, min_queries=1)
     service = PersonalKnowledgeService(
         daos=[mock_dao],
@@ -63,9 +62,14 @@ def test_custom_parameters() -> None:
     )
 
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
-    assert result.sessions_count == 3  # 天気検索もセッションとして選抜される
+    assert result.sessions_count == 3
 
 
 def test_run_simulation_execution() -> None:
     """run_simulation 関数がエラーなく完了することの検証。"""
-    run_simulation(session_gap_seconds=1800, min_queries=2, similarity_threshold=0.3)
+    run_simulation(
+        session_gap_seconds=1800,
+        min_queries=2,
+        similarity_threshold=0.3,
+        use_real_browser=False,
+    )

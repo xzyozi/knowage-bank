@@ -117,9 +117,13 @@ def run_simulation(
     min_queries: int = 2,
     similarity_threshold: float = 0.3,
     dedup_window_seconds: int = 300,
-    use_real_browser: bool = False,
+    use_real_browser: bool = True,
 ) -> None:
-    """検索履歴処理のパイプラインシミュレーションを実行する。"""
+    """検索履歴処理のパイプラインシミュレーションを実行する。
+
+    既定動作 (use_real_browser=True): PC上の実際のブラウザ (Chrome/Edge/Firefox) から全履歴を取得し、
+    Issue への影響ゼロ (dry_run=True) で選定シミュレーションを実行します。
+    """
     logger.info("=" * 80)
     data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (8件)"
     logger.info(
@@ -169,7 +173,7 @@ def run_simulation(
     deduped_entries, sessions = service.process_entries_to_sessions(raw_entries)
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
 
-    # 除外されたログの分析 (サンプル時または少量時に表示)
+    # 除外されたログの分析
     if not use_real_browser:
         deduped_set = {(e.timestamp, e.keyword) for e in deduped_entries}
         session_queries_set = {q for s in sessions for q in s.queries}
@@ -215,7 +219,7 @@ def run_simulation(
         for q_idx, q in enumerate(session.queries, 1):
             logger.info(f"      {q_idx}. {q}")
 
-        # プレビュー表示（先頭5件のみ）
+        # プレビュー表示
         logger.info("\n  📄 生成されるナレッジ本文 (プレビュー):")
         body_lines = decision.body.strip().split("\n")
         for line in body_lines[:6]:
@@ -236,11 +240,15 @@ def run_simulation(
 
 def main() -> None:
     """CLI エントリーポイント。"""
-    parser = argparse.ArgumentParser(description="検索履歴の選定シミュレーション実行スクリプト")
+    parser = argparse.ArgumentParser(
+        description="検索履歴の選定シミュレーション実行スクリプト (デフォルトで実際のブラウザDBを使用)"
+    )
     parser.add_argument(
-        "--real-browser",
+        "--demo",
+        "--mock",
+        dest="demo_mode",
         action="store_true",
-        help="デモ用8件サンプルではなく、PC上の実際のブラウザ (Chrome/Edge/Firefox) から数百件の実際の検索履歴を取得してシミュレーションを行う",
+        help="実際のブラウザDBではなく、デモ用サンプル8件でシミュレーション動作させる場合に指定",
     )
     parser.add_argument(
         "--session-gap-seconds",
@@ -273,7 +281,7 @@ def main() -> None:
         min_queries=args.min_queries,
         similarity_threshold=args.similarity_threshold,
         dedup_window_seconds=args.dedup_window_seconds,
-        use_real_browser=args.real_browser,
+        use_real_browser=not args.demo_mode,
     )
 
 
