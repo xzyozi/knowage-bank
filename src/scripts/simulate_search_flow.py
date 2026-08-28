@@ -128,7 +128,11 @@ def run_simulation(
     use_gemini: bool = True,
 ) -> None:
     """検索履歴処理のパイプラインシミュレーションを実行する。"""
-    api_key_status = "検出されました (キーが有効です)" if os.environ.get("GEMINI_API_KEY") else "未検出 (GEMINI_API_KEY が未設定です)"
+    api_key_status = (
+        "検出されました (キーが有効です)"
+        if os.environ.get("GEMINI_API_KEY")
+        else "未検出 (GEMINI_API_KEY が未設定です)"
+    )
 
     logger.info("=" * 80)
     data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (9件)"
@@ -263,7 +267,9 @@ def run_simulation(
         logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
         logger.info("=" * 80)
         logger.info(f"  ・対象モデル:       {intent_filter.chat_model}")
-        logger.info(f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)")
+        logger.info(
+            f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count / 1500 * 100:.2f}%)"
+        )
         logger.info(f"  ・入力トークン数:   {stats.prompt_tokens} tokens")
         logger.info(f"  ・出力トークン数:   {stats.candidates_tokens} tokens")
         logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")

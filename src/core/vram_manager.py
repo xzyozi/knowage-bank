@@ -89,8 +89,8 @@ class OllamaController:
     @staticmethod
     def _normalize_url(endpoint: str) -> str:
         if endpoint.endswith("/v1") or endpoint.endswith("/v1/"):
-            return endpoint.rsplit("/v1", 1)[0].rstrip('/')
-        return endpoint.rstrip('/')
+            return endpoint.rsplit("/v1", 1)[0].rstrip("/")
+        return endpoint.rstrip("/")
 
     def list_loaded_models(self) -> List[str]:
         """現在 Ollama の VRAM 上にロードされているモデル名のリストを取得する。"""
@@ -98,7 +98,7 @@ class OllamaController:
         try:
             req = urllib.request.urlopen(ps_url, timeout=2)
             if req.getcode() == 200:
-                data = json.loads(req.read().decode('utf-8'))
+                data = json.loads(req.read().decode("utf-8"))
                 return [m.get("name") for m in data.get("models", []) if m.get("name")]
         except urllib.error.URLError as e:
             logger.warning(f"Ollama endpoint unreachable at {ps_url}: {e}")
@@ -111,8 +111,8 @@ class OllamaController:
         logger.info(f"Unloading Ollama model: {model_name}")
         unload_req = urllib.request.Request(
             gen_url,
-            data=json.dumps({"model": model_name, "keep_alive": 0}).encode('utf-8'),
-            headers={'Content-Type': 'application/json'}
+            data=json.dumps({"model": model_name, "keep_alive": 0}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
         )
         urllib.request.urlopen(unload_req, timeout=5)
 
@@ -151,11 +151,7 @@ class LlamaServerManager:
     """
 
     def __init__(
-        self,
-        executable: str = "llama-server.exe",
-        host: str = "127.0.0.1",
-        port: int = 8080,
-        health_timeout: int = 120
+        self, executable: str = "llama-server.exe", host: str = "127.0.0.1", port: int = 8080, health_timeout: int = 120
     ) -> None:
         self.executable = executable
         self.host = host
@@ -163,10 +159,7 @@ class LlamaServerManager:
         self.health_timeout = health_timeout
 
     @contextmanager
-    def run_server(
-        self,
-        cmd_args: List[str]
-    ) -> Generator[subprocess.Popen, None, None]:
+    def run_server(self, cmd_args: List[str]) -> Generator[subprocess.Popen, None, None]:
         """
         指定された引数で llama-server をバックグラウンド起動し、
         ブロックを抜ける際に終了処理および VRAM / ポート解放の確認監査を行う。
@@ -179,11 +172,7 @@ class LlamaServerManager:
         logger.info(f"Starting {self.executable} on {self.host}:{self.port}...")
         logger.debug(f"Command: {' '.join(full_cmd)}")
 
-        process = subprocess.Popen(
-            full_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
+        process = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         health_url = f"http://{self.host}:{self.port}/health"
         ready = False

@@ -116,9 +116,7 @@ def load_config(config_path: Path | str | None = None) -> PersonalKnowledgeConfi
             chat_model=api_data.get("chat_model", ApiConfig.chat_model),
             embed_model=api_data.get("embed_model", ApiConfig.embed_model),
             model_discovery=api_data.get("model_discovery", ApiConfig.model_discovery),
-            model_cache_ttl_seconds=api_data.get(
-                "model_cache_ttl_seconds", ApiConfig.model_cache_ttl_seconds
-            ),
+            model_cache_ttl_seconds=api_data.get("model_cache_ttl_seconds", ApiConfig.model_cache_ttl_seconds),
             allow_preview_models=api_data.get("allow_preview_models", ApiConfig.allow_preview_models),
             allowed_models=api_data.get("allowed_models", []),
             chat_model_candidates=api_data.get("chat_model_candidates", ApiConfig().chat_model_candidates),

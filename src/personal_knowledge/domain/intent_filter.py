@@ -149,7 +149,7 @@ class IntentFilter:
             "以下の検索クエリリストについて、それぞれの探求意図を判定してください。\n"
             "『技術的な学習・概念理解・プログラミング・問題解決・仕事関連知識』が目的の場合は true、\n"
             "『マッチングアプリ・恋愛・ゲーム・エンタメ・買い物・生活日常タスク・型番単体』等の場合は false としてください。\n"
-            "返答は必ず JSON 形式で {\"1\": true, \"2\": false, ...} のように番号に対応する boolean のみを返してください。\n\n"
+            '返答は必ず JSON 形式で {"1": true, "2": false, ...} のように番号に対応する boolean のみを返してください。\n\n'
             f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
         )
 
@@ -195,9 +195,14 @@ class IntentFilter:
                         refreshed_models, source = self.model_resolver.resolve_candidates(
                             "generate_content", force_refresh=True, exclude=attempted_models
                         )
-                        pending_models.extend(candidate for candidate in refreshed_models if candidate not in pending_models)
+                        pending_models.extend(
+                            candidate for candidate in refreshed_models if candidate not in pending_models
+                        )
                         break
-                    if category in {"rate_limited", "transient"} and retry_count + 1 < self.model_resolver.config.model_retry_count:
+                    if (
+                        category in {"rate_limited", "transient"}
+                        and retry_count + 1 < self.model_resolver.config.model_retry_count
+                    ):
                         sleep_seconds = self.model_resolver.retry_delay_seconds(retry_count)
                         logger.info(
                             "Geminiモデル '%s' が%sのため %.1f 秒後に再試行します (%d/%d)",

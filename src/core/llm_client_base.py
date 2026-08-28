@@ -40,7 +40,7 @@ def extract_json_from_text(raw_text: str) -> Optional[Dict[str, Any]]:
         pass
 
     # 2. 最初に出現する '{' からロバストにデコード
-    start_idx = raw_text.find('{')
+    start_idx = raw_text.find("{")
     if start_idx != -1:
         try:
             decoder = json.JSONDecoder()
@@ -64,12 +64,7 @@ class BaseLLMClient:
         default_timeout: リクエストのデフォルトタイムアウト時間(秒)
     """
 
-    def __init__(
-        self,
-        api_base: str,
-        api_key: str = "local",
-        default_timeout: int = 300
-    ) -> None:
+    def __init__(self, api_base: str, api_key: str = "local", default_timeout: int = 300) -> None:
         self.api_base = api_base
         self.api_key = api_key
         self.default_timeout = default_timeout
@@ -84,7 +79,7 @@ class BaseLLMClient:
         expect_json: bool = False,
         timeout: Optional[int] = None,
         extra_messages: Optional[List[Dict[str, str]]] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         指定したモデルとプロンプトでテキスト生成リクエストを送信する。

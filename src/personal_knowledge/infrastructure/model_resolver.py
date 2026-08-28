@@ -148,9 +148,7 @@ class ModelResolver:
         required_action = "generatecontent" if purpose == "generate_content" else "embedcontent"
         discovered: list[str] = []
         for model in self._get_client().models.list():
-            actions = getattr(model, "supported_actions", None) or getattr(
-                model, "supported_generation_methods", []
-            )
+            actions = getattr(model, "supported_actions", None) or getattr(model, "supported_generation_methods", [])
             normalized_actions = {str(action).replace("_", "").lower() for action in actions}
             if required_action not in normalized_actions:
                 continue

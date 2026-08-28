@@ -204,7 +204,7 @@ def main() -> None:
             logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
             logger.info("=" * 80)
             logger.info(
-                f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)"
+                f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count / 1500 * 100:.2f}%)"
             )
             logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
             logger.info("  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")

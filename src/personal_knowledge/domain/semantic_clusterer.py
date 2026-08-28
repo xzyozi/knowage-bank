@@ -90,9 +90,14 @@ class SemanticClusterer:
                             refreshed_models, source = self.model_resolver.resolve_candidates(
                                 "embed_content", force_refresh=True, exclude=attempted_models
                             )
-                            pending_models.extend(candidate for candidate in refreshed_models if candidate not in pending_models)
+                            pending_models.extend(
+                                candidate for candidate in refreshed_models if candidate not in pending_models
+                            )
                             break
-                        if category in {"rate_limited", "transient"} and retry_count + 1 < self.model_resolver.config.model_retry_count:
+                        if (
+                            category in {"rate_limited", "transient"}
+                            and retry_count + 1 < self.model_resolver.config.model_retry_count
+                        ):
                             time.sleep(self.model_resolver.retry_delay_seconds(retry_count))
                             continue
                         logger.warning("Gemini Embedding API call failed for model '%s': %s", request_model, error)
@@ -100,7 +105,9 @@ class SemanticClusterer:
         except ModelResolutionError:
             raise
         except Exception as error:
-            logger.warning("Gemini Embedding API call failed for text '%s': %s. Returning zero vector.", text[:50], error)
+            logger.warning(
+                "Gemini Embedding API call failed for text '%s': %s. Returning zero vector.", text[:50], error
+            )
 
         return []
 
