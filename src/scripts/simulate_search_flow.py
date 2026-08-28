@@ -7,23 +7,34 @@ import logging
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from personal_knowledge.dao.base_dao import BrowserHistoryDAO
+    from personal_knowledge.domain.analyzer import SessionAnalyzer
+    from personal_knowledge.domain.deduplicator import SessionDeduplicator
+    from personal_knowledge.domain.intent_filter import IntentFilter
+    from personal_knowledge.domain.models import SearchEntry
+    from personal_knowledge.integration.issue_router import IssueRouter
+    from personal_knowledge.integration.local_file_client import LocalFileIssueClient
+    from personal_knowledge.service import PersonalKnowledgeService
 
 load_dotenv()
 
 # src/ をモジュール検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-BrowserHistoryDAO = import_module("personal_knowledge.dao.base_dao").BrowserHistoryDAO
-SessionAnalyzer = import_module("personal_knowledge.domain.analyzer").SessionAnalyzer
-SessionDeduplicator = import_module("personal_knowledge.domain.deduplicator").SessionDeduplicator
-IntentFilter = import_module("personal_knowledge.domain.intent_filter").IntentFilter
-SearchEntry = import_module("personal_knowledge.domain.models").SearchEntry
-IssueRouter = import_module("personal_knowledge.integration.issue_router").IssueRouter
-LocalFileIssueClient = import_module("personal_knowledge.integration.local_file_client").LocalFileIssueClient
-PersonalKnowledgeService = import_module("personal_knowledge.service").PersonalKnowledgeService
+if not TYPE_CHECKING:
+    BrowserHistoryDAO = import_module("personal_knowledge.dao.base_dao").BrowserHistoryDAO
+    SessionAnalyzer = import_module("personal_knowledge.domain.analyzer").SessionAnalyzer
+    SessionDeduplicator = import_module("personal_knowledge.domain.deduplicator").SessionDeduplicator
+    IntentFilter = import_module("personal_knowledge.domain.intent_filter").IntentFilter
+    SearchEntry = import_module("personal_knowledge.domain.models").SearchEntry
+    IssueRouter = import_module("personal_knowledge.integration.issue_router").IssueRouter
+    LocalFileIssueClient = import_module("personal_knowledge.integration.local_file_client").LocalFileIssueClient
+    PersonalKnowledgeService = import_module("personal_knowledge.service").PersonalKnowledgeService
 
 logging.basicConfig(
     level=logging.INFO,
