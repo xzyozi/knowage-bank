@@ -7,17 +7,16 @@ tools/base/vram_manager.py
 高再利用性を実現するスタンドアロンな共通基盤。
 """
 
+from contextlib import contextmanager
 import json
 import logging
-import os
+from pathlib import Path
 import socket
 import subprocess
 import time
+from typing import Any, Dict, Generator, List, Protocol, Union
 import urllib.error
 import urllib.request
-from contextlib import contextmanager
-from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Protocol, Union
 
 from filelock import FileLock, Timeout
 

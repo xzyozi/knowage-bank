@@ -2,6 +2,7 @@
 
 import argparse
 from datetime import datetime, timedelta, timezone
+from importlib import import_module
 import logging
 import os
 from pathlib import Path
@@ -15,14 +16,14 @@ load_dotenv()
 # src/ をモジュール検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from personal_knowledge.dao.base_dao import BrowserHistoryDAO
-from personal_knowledge.domain.analyzer import SessionAnalyzer
-from personal_knowledge.domain.deduplicator import SessionDeduplicator
-from personal_knowledge.domain.intent_filter import IntentFilter
-from personal_knowledge.domain.models import SearchEntry
-from personal_knowledge.integration.issue_router import IssueRouter
-from personal_knowledge.integration.local_file_client import LocalFileIssueClient
-from personal_knowledge.service import PersonalKnowledgeService
+BrowserHistoryDAO = import_module("personal_knowledge.dao.base_dao").BrowserHistoryDAO
+SessionAnalyzer = import_module("personal_knowledge.domain.analyzer").SessionAnalyzer
+SessionDeduplicator = import_module("personal_knowledge.domain.deduplicator").SessionDeduplicator
+IntentFilter = import_module("personal_knowledge.domain.intent_filter").IntentFilter
+SearchEntry = import_module("personal_knowledge.domain.models").SearchEntry
+IssueRouter = import_module("personal_knowledge.integration.issue_router").IssueRouter
+LocalFileIssueClient = import_module("personal_knowledge.integration.local_file_client").LocalFileIssueClient
+PersonalKnowledgeService = import_module("personal_knowledge.service").PersonalKnowledgeService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -266,7 +267,7 @@ def run_simulation(
         logger.info(f"  ・入力トークン数:   {stats.prompt_tokens} tokens")
         logger.info(f"  ・出力トークン数:   {stats.candidates_tokens} tokens")
         logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
-        logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
+        logger.info("  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
 
     logger.info("\n✅ シミュレーション完了: Issueへの書き込みは一切行われていません (dry_run)。")
 
