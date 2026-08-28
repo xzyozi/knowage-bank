@@ -43,7 +43,7 @@ def test_sanitize_filename() -> None:
 def setup_mcp_mock(mock_sse: Any, mock_session: Any) -> None:
     session_instance = MagicMock()
 
-    async def mock_initialize():
+    async def mock_initialize() -> None:
         return None
 
     session_instance.initialize = mock_initialize
@@ -53,25 +53,25 @@ def setup_mcp_mock(mock_sse: Any, mock_session: Any) -> None:
     mock_content.text = "Deep Research Mock Results"
     mock_result.content = [mock_content]
 
-    async def mock_call_tool(*args, **kwargs):
+    async def mock_call_tool(*args: Any, **kwargs: Any) -> Any:
         return mock_result
 
     session_instance.call_tool = mock_call_tool
 
     class AsyncCM:
-        async def __aenter__(self):
+        async def __aenter__(self) -> Any:
             return session_instance
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
             pass
 
     mock_session.return_value = AsyncCM()
 
     class SseCM:
-        async def __aenter__(self):
+        async def __aenter__(self) -> tuple[None, None]:
             return (None, None)
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
+        async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
             pass
 
     mock_sse.return_value = SseCM()
