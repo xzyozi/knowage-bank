@@ -81,7 +81,7 @@ class IntentFilter:
     def __init__(
         self,
         system_prompt: str | None = None,
-        chat_model: str = "gemini-2.0-flash",
+        chat_model: str = "gemini-3.6-flash",
         api_key: str | None = None,
         custom_tech_keywords: set[str] | None = None,
     ) -> None:
@@ -124,8 +124,7 @@ class IntentFilter:
     def judge_batch_with_llm(self, keywords: list[str]) -> list[bool]:
         """複数の検索キーワードを 1 回のリクエストでまとめて Gemini API に送信し一括判定する (バッチ処理)。
 
-        404 NOT_FOUND エラー発生時は、利用可能な代替モデル (gemini-2.0-flash, gemini-2.5-flash, gemini-1.5-flash-latest)
-        に自動でフォールバックして確実に判定を完了させます。
+        利用可能モデル: gemini-3.6-flash, gemini-flash-latest, gemini-3.5-flash
         """
         if not keywords:
             return []
@@ -136,10 +135,10 @@ class IntentFilter:
 
         candidate_models = [
             self.chat_model,
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3.5-flash",
             "gemini-2.0-flash",
-            "gemini-2.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash-002",
         ]
         # 重複・空文字の除去
         candidate_models = list(dict.fromkeys([m for m in candidate_models if m]))
