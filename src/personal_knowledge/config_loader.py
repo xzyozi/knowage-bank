@@ -27,6 +27,15 @@ class ApiConfig:
     provider: str = "gemini"
     chat_model: str = "gemini-1.5-flash"
     embed_model: str = "models/text-embedding-004"
+    model_discovery: bool = True
+    model_cache_ttl_seconds: int = 86_400
+    allow_preview_models: bool = False
+    allowed_models: list[str] = field(default_factory=list)
+    chat_model_candidates: list[str] = field(
+        default_factory=lambda: ["gemini-3.6-flash", "gemini-flash-latest", "gemini-3.5-flash"]
+    )
+    embed_model_candidates: list[str] = field(default_factory=lambda: ["models/text-embedding-004"])
+    model_retry_count: int = 3
 
 
 @dataclass
@@ -106,6 +115,15 @@ def load_config(config_path: Path | str | None = None) -> PersonalKnowledgeConfi
             provider=api_data.get("provider", ApiConfig.provider),
             chat_model=api_data.get("chat_model", ApiConfig.chat_model),
             embed_model=api_data.get("embed_model", ApiConfig.embed_model),
+            model_discovery=api_data.get("model_discovery", ApiConfig.model_discovery),
+            model_cache_ttl_seconds=api_data.get(
+                "model_cache_ttl_seconds", ApiConfig.model_cache_ttl_seconds
+            ),
+            allow_preview_models=api_data.get("allow_preview_models", ApiConfig.allow_preview_models),
+            allowed_models=api_data.get("allowed_models", []),
+            chat_model_candidates=api_data.get("chat_model_candidates", ApiConfig().chat_model_candidates),
+            embed_model_candidates=api_data.get("embed_model_candidates", ApiConfig().embed_model_candidates),
+            model_retry_count=api_data.get("model_retry_count", ApiConfig.model_retry_count),
         ),
         clustering=ClusteringConfig(
             similarity_threshold=clustering_data.get("similarity_threshold", ClusteringConfig.similarity_threshold),
