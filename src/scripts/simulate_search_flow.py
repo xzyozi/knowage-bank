@@ -8,6 +8,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # src/ をモジュール検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -122,16 +126,15 @@ def run_simulation(
     use_real_browser: bool = True,
     use_gemini: bool = True,
 ) -> None:
-    """検索履歴処理のパイプラインシミュレーションを実行する。
+    """検索履歴処理のパイプラインシミュレーションを実行する。"""
+    api_key_status = "検出されました (キーが有効です)" if os.environ.get("GEMINI_API_KEY") else "未検出 (GEMINI_API_KEY が未設定です)"
 
-    既定動作 (use_real_browser=True, use_gemini=True): 実際のブラウザ履歴 DB を読み込み、
-    Gemini 判定を標準適用した上で、Issue への影響ゼロ (dry_run=True) で選定シミュレーションを実行します。
-    """
     logger.info("=" * 80)
     data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (9件)"
     ai_status_str = "有効 (標準)" if use_gemini else "無効 (--no-gemini)"
     logger.info(
         f"⚙️  【設定パラメータ】 データソース: {data_source_str} | Gemini AI判定: {ai_status_str} | "
+        f"GEMINI_API_KEY: {api_key_status} | "
         f"session_gap={session_gap_seconds}s, min_queries={min_queries}, "
         f"similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
     )
