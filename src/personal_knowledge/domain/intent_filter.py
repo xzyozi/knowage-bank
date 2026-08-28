@@ -1,6 +1,7 @@
 """検索クエリの知識探求意図を判定するフィルタリングモジュール。"""
 
 from dataclasses import dataclass
+import json
 import logging
 import os
 import re
@@ -75,7 +76,7 @@ class ApiUsageStats:
 
 
 class IntentFilter:
-    """動的単一トークン判定および Gemini API による LLM 判定を行うクラス。"""
+    """動的単一トークン判定および Gemini API による LLM 判定（単一・バッチ処理）を行うクラス。"""
 
     def __init__(
         self,
@@ -116,25 +117,42 @@ class IntentFilter:
         return True
 
     def _judge_with_llm(self, keyword: str) -> bool:
-        """Gemini API を呼び出し、キーワードの知識探求意図を True/False で判定し、トークン数を計測する。
+        """単一キーワードの LLM 意図判定。"""
+        results = self.judge_batch_with_llm([keyword])
+        return results[0] if results else True
 
-        APIキーがない場合や例外発生時は、安全なフォールバックとして True (通過) を返却する。
+    def judge_batch_with_llm(self, keywords: list[str]) -> list[bool]:
+        """複数の検索キーワードを 1 回のリクエストでまとめて Gemini API に送信し一括判定する (バッチ処理)。
+
+        150件前後の検索クエリであっても、25件ずつのバッチにまとめることでわずか 6 回の API リクエストに削減。
         """
-        try:
-            api_key = self._api_key or os.environ.get("GEMINI_API_KEY")
-            if not api_key:
-                return True
+        if not keywords:
+            return []
 
+        api_key = self._api_key or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return [True] * len(keywords)
+
+        try:
             from google import genai
             from google.genai import types
+
+            batch_payload = {str(i): kw for i, kw in enumerate(keywords, 1)}
+            prompt = (
+                "以下の検索クエリリストについて、それぞれの探求意図を判定してください。\n"
+                "『技術的な学習・概念理解・プログラミング・問題解決・仕事関連知識』が目的の場合は true、\n"
+                "『マッチングアプリ・恋愛・ゲーム・エンタメ・買い物・生活日常タスク・型番単体』等の場合は false としてください。\n"
+                "返答は必ず JSON 形式で {\"1\": true, \"2\": false, ...} のように番号に対応する boolean のみを返してください。\n\n"
+                f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
+            )
 
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=self.chat_model,
-                contents=keyword,
+                contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=self.system_prompt,
                     temperature=0.0,
+                    response_mime_type="application/json",
                 ),
             )
 
@@ -145,18 +163,49 @@ class IntentFilter:
                 self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
                 self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
 
-            result_text = (response.text or "").strip().lower()
-            return result_text.startswith("true")
+            text = (response.text or "").strip()
+            parsed = json.loads(text)
+            results: list[bool] = []
+            for i in range(1, len(keywords) + 1):
+                val = parsed.get(str(i), parsed.get(i, True))
+                results.append(bool(val))
+            return results
+
         except Exception as e:
-            logger.warning(f"Gemini API intent judgment failed for keyword '{keyword}': {e}. Defaulting to True.")
-            return True
+            logger.warning(f"Gemini API batch judgment failed: {e}. Defaulting to True for batch.")
+            return [True] * len(keywords)
 
     def is_knowledge_query(self, keyword: str) -> bool:
-        """検索キーワードが知識探求・技術解決目的かどうかを判定する。
-
-        単一トークンかつ技術辞書に含まれないコンテキストなしノイズを動的除外した上で、
-        必要に応じて Gemini LLM 判定を行う。
-        """
+        """検索キーワードが知識探求・技術解決目的かどうかを判定する。"""
         if self.is_single_token_non_tech(keyword):
             return False
         return self._judge_with_llm(keyword)
+
+    def filter_knowledge_queries_batch(self, keywords: list[str], batch_size: int = 25) -> list[bool]:
+        """検索キーワード群をバッチ分割し、最小リクエスト数で一括判定する。"""
+        results: list[bool] = []
+        
+        for i in range(0, len(keywords), batch_size):
+            chunk = keywords[i : i + batch_size]
+            
+            # 各クエリが単一トークン非技術であれば事前に False 決定
+            chunk_results: list[bool | None] = []
+            queries_for_llm: list[str] = []
+            llm_indices: list[int] = []
+
+            for idx, kw in enumerate(chunk):
+                if self.is_single_token_non_tech(kw):
+                    chunk_results.append(False)
+                else:
+                    chunk_results.append(None)
+                    queries_for_llm.append(kw)
+                    llm_indices.append(idx)
+
+            if queries_for_llm:
+                llm_results = self.judge_batch_with_llm(queries_for_llm)
+                for pos, res in zip(llm_indices, llm_results):
+                    chunk_results[pos] = res
+
+            results.extend([bool(r) for r in chunk_results])
+
+        return results

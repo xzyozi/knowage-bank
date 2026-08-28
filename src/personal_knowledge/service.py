@@ -56,18 +56,7 @@ class PersonalKnowledgeService:
         intent_filter: IntentFilter | False | None = None,
         semantic_clusterer: SemanticClusterer | None = None,
     ) -> None:
-        """PersonalKnowledgeService を初期化する。
-
-        Args:
-            daos: ブラウザ DAO インスタンスのリスト。None の場合は標準の Chrome, Edge, Firefox DAO を使用。
-            deduplicator: 重複排除モジュール。None の場合はデフォルト設定を使用。
-            analyzer: セッション解析モジュール。None の場合はデフォルト設定を使用。
-            router: ルーティング判定モジュール。None の場合はデフォルト設定を使用。
-            issue_client: Issue/ナレッジ格納クライアント。
-            github_client: 旧互換用エイリアス。
-            intent_filter: 意図判定フィルタ。標準で IntentFilter() を使用。False を指定するとAIフィルタを完全に無効化。
-            semantic_clusterer: Embeddingベースのセッションクラスタリングモジュール。
-        """
+        """PersonalKnowledgeService を初期化する。"""
         self.daos = daos or [
             ChromiumHistoryDAO(browser_type="chrome"),
             ChromiumHistoryDAO(browser_type="edge"),
@@ -77,7 +66,6 @@ class PersonalKnowledgeService:
         self.analyzer = analyzer or SessionAnalyzer(session_gap_seconds=1800, min_queries=2)
         self.router = router or IssueRouter(similarity_threshold=0.3)
 
-        # Gemini 意図判定フィルタを標準化 (False が明示された場合のみ無効化)
         if intent_filter is False:
             self.intent_filter = None
         else:
@@ -112,7 +100,10 @@ class PersonalKnowledgeService:
 
         filtered = deduped
         if self.intent_filter is not None:
-            filtered = [e for e in deduped if self.intent_filter.is_knowledge_query(e.keyword)]
+            keywords = [e.keyword for e in deduped]
+            # バッチ一括処理で Gemini API リクエスト数を約 95% 削減 (25件ずつまとめて判定)
+            flags = self.intent_filter.filter_knowledge_queries_batch(keywords, batch_size=25)
+            filtered = [e for e, flag in zip(deduped, flags) if flag]
 
         if self.semantic_clusterer is not None:
             sessions = self.semantic_clusterer.process_entries(filtered)
