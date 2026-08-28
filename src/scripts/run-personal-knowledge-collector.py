@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from typing import Literal
 
 # src/ をモジュール検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -15,6 +16,7 @@ from personal_knowledge.domain.analyzer import SessionAnalyzer
 from personal_knowledge.domain.deduplicator import SessionDeduplicator
 from personal_knowledge.domain.intent_filter import IntentFilter
 from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
+from personal_knowledge.infrastructure.model_resolver import ModelResolver
 from personal_knowledge.integration.base_issue_client import BaseIssueClient
 from personal_knowledge.integration.github_client import GitHubIssueClient
 from personal_knowledge.integration.issue_router import IssueRouter
@@ -58,6 +60,11 @@ def main() -> None:
         action="store_false",
         help="Gemini AI 意図判定・Embedding結合を無効化し、ルールベースのみで処理を行う場合に使用",
     )
+    parser.add_argument(
+        "--refresh-models",
+        action="store_true",
+        help="Geminiの利用可能モデル一覧キャッシュを更新してから実行する",
+    )
     parser.set_defaults(use_gemini=True)
 
     # --- セッション選定チューニング用パラメータ ---
@@ -93,8 +100,15 @@ def main() -> None:
     elif args.backend == "local":
         issue_client = LocalFileIssueClient()
 
-    intent_filter = IntentFilter() if args.use_gemini else False
-    semantic_clusterer = SemanticClusterer() if args.use_gemini else None
+    model_resolver = ModelResolver()
+    if args.use_gemini and args.refresh_models:
+        model_resolver.resolve_candidates("generate_content", force_refresh=True)
+        model_resolver.resolve_candidates("embed_content", force_refresh=True)
+
+    intent_filter: IntentFilter | Literal[False] = (
+        IntentFilter(model_resolver=model_resolver) if args.use_gemini else False
+    )
+    semantic_clusterer = SemanticClusterer(model_resolver=model_resolver) if args.use_gemini else None
 
     # カスタム選定パラメータをコンポーネントに反映
     deduplicator = SessionDeduplicator(time_window_seconds=args.dedup_window_seconds)
@@ -108,6 +122,7 @@ def main() -> None:
         router=router,
         intent_filter=intent_filter,
         semantic_clusterer=semantic_clusterer,
+        model_resolver=model_resolver,
     )
     logger.info(
         "Starting Personal Knowledge Collection & Routing pipeline "
@@ -125,12 +140,25 @@ def main() -> None:
     result = service.run_pipeline(dry_run=args.dry_run, mock_open_issues=open_issues)
 
     stats = intent_filter.usage_stats if isinstance(intent_filter, IntentFilter) else None
+    model_resolution = {}
+    for purpose in ("generate_content", "embed_content"):
+        resolution = model_resolver.get_resolution(purpose)
+        if resolution is not None:
+            model_resolution[purpose] = {
+                "selected_model": resolution.selected_model,
+                "candidate_source": resolution.candidate_source,
+                "fallback_count": resolution.fallback_count,
+                "fallback_reasons": resolution.fallback_reasons,
+                "resolved_at": resolution.resolved_at.isoformat(),
+            }
+
     summary = {
         "raw_entries_count": result.raw_entries_count,
         "deduped_entries_count": result.deduped_entries_count,
         "sessions_count": result.sessions_count,
         "created_issues_count": result.created_issues_count,
         "added_comments_count": result.added_comments_count,
+        "model_resolution": model_resolution,
         "decisions": [
             {
                 "action": d.action,
@@ -179,7 +207,7 @@ def main() -> None:
                 f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)"
             )
             logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
-            logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
+            logger.info("  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
 
 
 if __name__ == "__main__":
