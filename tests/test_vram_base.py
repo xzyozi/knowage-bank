@@ -1,3 +1,5 @@
+from typing import Any
+
 """
 tests/test_vram_base.py
 
@@ -13,7 +15,7 @@ import pytest
 from tools.base import BackendAdapter, GpuLease, LlamaServerManager, OllamaController
 
 
-def test_gpu_lease_acquire_and_release(tmp_path):
+def test_gpu_lease_acquire_and_release(tmp_path: Any) -> None:
     lock_file = tmp_path / "test_gpu.lock"
     lease = GpuLease(lock_path=lock_file, timeout=5)
 
@@ -23,7 +25,7 @@ def test_gpu_lease_acquire_and_release(tmp_path):
     # Lock file is created on filesystem, lease released without exception
 
 
-def test_ollama_controller_normalize_url():
+def test_ollama_controller_normalize_url() -> None:
     ctrl1 = OllamaController("http://localhost:11434/v1")
     assert ctrl1.base_url == "http://localhost:11434"
 
@@ -35,7 +37,7 @@ def test_ollama_controller_normalize_url():
 
 
 @patch("urllib.request.urlopen")
-def test_ollama_controller_unload_all_models_unreachable(mock_urlopen):
+def test_ollama_controller_unload_all_models_unreachable(mock_urlopen: Any) -> None:
     mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
     ctrl = OllamaController("http://localhost:11434")
 
@@ -50,7 +52,7 @@ def test_ollama_controller_unload_all_models_unreachable(mock_urlopen):
 @patch("socket.socket")
 @patch("urllib.request.urlopen")
 @patch("subprocess.Popen")
-def test_llama_server_manager_run_server(mock_popen, mock_urlopen, mock_socket, tmp_path):
+def test_llama_server_manager_run_server(mock_popen: Any, mock_urlopen: Any, mock_socket: Any, tmp_path: Any) -> None:
     mock_proc = MagicMock()
     mock_proc.poll.return_value = None
     mock_proc.return_value = 0

@@ -46,21 +46,23 @@ def test_intent_filter_is_enabled_by_default() -> None:
             source_browser="chrome",
         ),
     ]
+    mock_filter = MagicMock(spec=IntentFilter)
+    mock_filter.filter_knowledge_queries_batch.return_value = [True, True]
     service = PersonalKnowledgeService(
         daos=[_MockDAO(entries)],
         issue_client=LocalFileIssueClient(storage_path=""),
+        intent_filter=mock_filter,
     )
 
     assert isinstance(service.intent_filter, IntentFilter)
     assert service.semantic_clusterer is None
 
-    mock_batch_filter = MagicMock(return_value=[True, True])
-    service.intent_filter.filter_knowledge_queries_batch = mock_batch_filter
-
     deduped, sessions = service.process_entries_to_sessions(entries)
     assert len(deduped) == 2
     assert len(sessions) == 1
-    mock_batch_filter.assert_called_once_with([entry.keyword for entry in entries], batch_size=25)
+    mock_filter.filter_knowledge_queries_batch.assert_called_once_with(
+        [entry.keyword for entry in entries], batch_size=25
+    )
 
 
 def test_intent_filter_excludes_non_knowledge_queries() -> None:
