@@ -10,17 +10,81 @@ tools/base/vram_manager.py
 from contextlib import contextmanager
 import json
 import logging
+import os
 from pathlib import Path
 import socket
 import subprocess
 import time
-from typing import Any, Dict, Generator, List, Protocol, Union
+from typing import Any, BinaryIO, Dict, Generator, List, Protocol, Union
 import urllib.error
 import urllib.request
 
-from filelock import FileLock, Timeout
 
-logger = logging.getLogger("tools.base.vram_manager")
+class Timeout(Exception):
+    """ロック取得が指定時間内に完了しなかった場合の例外。"""
+
+
+class FileLock:
+    """WindowsとPOSIXで動作する、標準ライブラリのみのプロセス間ファイルロック。"""
+
+    def __init__(self, lock_file: str, timeout: float) -> None:
+        self.lock_file = lock_file
+        self.timeout = timeout
+        self._file: BinaryIO | None = None
+
+    def acquire(self) -> None:
+        deadline = time.monotonic() + self.timeout
+        self._file = open(self.lock_file, "a+b")
+        self._file.seek(0)
+        if not self._file.read(1):
+            self._file.write(b"\0")
+            self._file.flush()
+
+        while True:
+            try:
+                self._acquire_nonblocking()
+                return
+            except OSError as error:
+                if time.monotonic() >= deadline:
+                    self._file.close()
+                    self._file = None
+                    raise Timeout() from error
+                time.sleep(0.1)
+
+    def release(self) -> None:
+        if self._file is None:
+            return
+
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                self._file.seek(0)
+                msvcrt.locking(self._file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._file.close()
+            self._file = None
+
+    def _acquire_nonblocking(self) -> None:
+        if self._file is None:
+            raise RuntimeError("File lock is not initialized.")
+
+        if os.name == "nt":
+            import msvcrt
+
+            self._file.seek(0)
+            msvcrt.locking(self._file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+logger = logging.getLogger("core.vram_manager")
 
 
 class BackendAdapter(Protocol):
