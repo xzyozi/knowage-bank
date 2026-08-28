@@ -9,7 +9,7 @@ tools.base.llm_client_base モジュールのユニットテスト。
 from unittest.mock import MagicMock, patch
 import pytest
 
-from tools.base import BaseLLMClient, extract_json_from_text
+from core import BaseLLMClient, extract_json_from_text
 
 
 def test_extract_json_from_text_direct() -> None:

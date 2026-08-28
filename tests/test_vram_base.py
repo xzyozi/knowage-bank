@@ -12,7 +12,7 @@ import urllib.error
 from unittest.mock import MagicMock, patch
 import pytest
 
-from tools.base import BackendAdapter, GpuLease, LlamaServerManager, OllamaController
+from core import BackendAdapter, GpuLease, LlamaServerManager, OllamaController
 
 
 def test_gpu_lease_acquire_and_release(tmp_path: Any) -> None:
