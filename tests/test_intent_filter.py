@@ -41,11 +41,11 @@ def test_multi_token_query_calls_llm_judgment() -> None:
 
 
 def test_judge_with_llm_parses_true_response() -> None:
-    """Gemini API レスポンスが 'True' の場合に True を返すこと。"""
+    """Gemini API レスポンスが JSON 形式の True を含む場合に True を返すこと。"""
     intent_filter = IntentFilter(api_key="dummy-key")
 
     mock_response = MagicMock()
-    mock_response.text = "True"
+    mock_response.text = '{"1": true}'
     mock_response.usage_metadata = MagicMock(prompt_token_count=10, candidates_token_count=2, total_token_count=12)
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_response
@@ -62,7 +62,10 @@ def test_judge_with_llm_defaults_to_true_on_api_error() -> None:
     """Gemini API呼び出しが例外を発生させた場合、安全なデフォルト(True)を返すこと。"""
     intent_filter = IntentFilter(api_key="dummy-key")
 
-    with patch("google.genai.Client", side_effect=RuntimeError("API unavailable")):
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = RuntimeError("API unavailable")
+
+    with patch("google.genai.Client", return_value=mock_client):
         result = intent_filter._judge_with_llm("some query")
 
     assert result is True

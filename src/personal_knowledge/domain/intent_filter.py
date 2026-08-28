@@ -81,7 +81,7 @@ class IntentFilter:
     def __init__(
         self,
         system_prompt: str | None = None,
-        chat_model: str = "gemini-1.5-flash",
+        chat_model: str = "gemini-2.0-flash",
         api_key: str | None = None,
         custom_tech_keywords: set[str] | None = None,
     ) -> None:
@@ -124,7 +124,8 @@ class IntentFilter:
     def judge_batch_with_llm(self, keywords: list[str]) -> list[bool]:
         """複数の検索キーワードを 1 回のリクエストでまとめて Gemini API に送信し一括判定する (バッチ処理)。
 
-        150件前後の検索クエリであっても、25件ずつのバッチにまとめることでわずか 6 回の API リクエストに削減。
+        404 NOT_FOUND エラー発生時は、利用可能な代替モデル (gemini-2.0-flash, gemini-2.5-flash, gemini-1.5-flash-latest)
+        に自動でフォールバックして確実に判定を完了させます。
         """
         if not keywords:
             return []
@@ -133,47 +134,71 @@ class IntentFilter:
         if not api_key:
             return [True] * len(keywords)
 
-        try:
-            from google import genai
-            from google.genai import types
+        candidate_models = [
+            self.chat_model,
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash-002",
+        ]
+        # 重複・空文字の除去
+        candidate_models = list(dict.fromkeys([m for m in candidate_models if m]))
 
-            batch_payload = {str(i): kw for i, kw in enumerate(keywords, 1)}
-            prompt = (
-                "以下の検索クエリリストについて、それぞれの探求意図を判定してください。\n"
-                "『技術的な学習・概念理解・プログラミング・問題解決・仕事関連知識』が目的の場合は true、\n"
-                "『マッチングアプリ・恋愛・ゲーム・エンタメ・買い物・生活日常タスク・型番単体』等の場合は false としてください。\n"
-                "返答は必ず JSON 形式で {\"1\": true, \"2\": false, ...} のように番号に対応する boolean のみを返してください。\n\n"
-                f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
-            )
+        from google import genai
+        from google.genai import types
 
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=self.chat_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                ),
-            )
+        client = genai.Client(api_key=api_key)
 
-            self.usage_stats.request_count += 1
-            if hasattr(response, "usage_metadata") and response.usage_metadata:
-                meta = response.usage_metadata
-                self.usage_stats.prompt_tokens += getattr(meta, "prompt_token_count", 0) or 0
-                self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
-                self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
+        batch_payload = {str(i): kw for i, kw in enumerate(keywords, 1)}
+        prompt = (
+            "以下の検索クエリリストについて、それぞれの探求意図を判定してください。\n"
+            "『技術的な学習・概念理解・プログラミング・問題解決・仕事関連知識』が目的の場合は true、\n"
+            "『マッチングアプリ・恋愛・ゲーム・エンタメ・買い物・生活日常タスク・型番単体』等の場合は false としてください。\n"
+            "返答は必ず JSON 形式で {\"1\": true, \"2\": false, ...} のように番号に対応する boolean のみを返してください。\n\n"
+            f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
+        )
 
-            text = (response.text or "").strip()
-            parsed = json.loads(text)
-            results: list[bool] = []
-            for i in range(1, len(keywords) + 1):
-                val = parsed.get(str(i), parsed.get(i, True))
-                results.append(bool(val))
-            return results
+        last_exception = None
+        for model in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                    ),
+                )
 
-        except Exception as e:
-            logger.warning(f"Gemini API batch judgment failed: {e}. Defaulting to True for batch.")
-            return [True] * len(keywords)
+                self.usage_stats.request_count += 1
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    meta = response.usage_metadata
+                    self.usage_stats.prompt_tokens += getattr(meta, "prompt_token_count", 0) or 0
+                    self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
+                    self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
+
+                text = (response.text or "").strip()
+                parsed = json.loads(text)
+                results: list[bool] = []
+                for i in range(1, len(keywords) + 1):
+                    val = parsed.get(str(i), parsed.get(i, True))
+                    results.append(bool(val))
+
+                self.chat_model = model  # 成功したモデル名を記憶
+                return results
+
+            except Exception as e:
+                last_exception = e
+                err_str = str(e)
+                if "404" in err_str or "NOT_FOUND" in err_str:
+                    logger.info(f"Gemini Model '{model}' returned 404 NOT_FOUND. Fallbacking to next model candidate...")
+                    continue
+                else:
+                    logger.warning(f"Gemini API batch judgment failed with model '{model}': {e}.")
+                    break
+
+        logger.warning(f"All Gemini model candidates failed: {last_exception}. Defaulting to True for batch.")
+        return [True] * len(keywords)
 
     def is_knowledge_query(self, keyword: str) -> bool:
         """検索キーワードが知識探求・技術解決目的かどうかを判定する。"""
@@ -184,11 +209,10 @@ class IntentFilter:
     def filter_knowledge_queries_batch(self, keywords: list[str], batch_size: int = 25) -> list[bool]:
         """検索キーワード群をバッチ分割し、最小リクエスト数で一括判定する。"""
         results: list[bool] = []
-        
+
         for i in range(0, len(keywords), batch_size):
             chunk = keywords[i : i + batch_size]
-            
-            # 各クエリが単一トークン非技術であれば事前に False 決定
+
             chunk_results: list[bool | None] = []
             queries_for_llm: list[str] = []
             llm_indices: list[int] = []
