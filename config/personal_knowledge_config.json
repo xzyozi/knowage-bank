@@ -1,0 +1,39 @@
+{
+    "api": {
+        "provider": "gemini",
+        "chat_model": "gemini-1.5-flash",
+        "embed_model": "models/text-embedding-004",
+        "model_discovery": true,
+        "model_cache_ttl_seconds": 86400,
+        "allow_preview_models": false,
+        "allowed_models": [],
+        "chat_model_candidates": [
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3.5-flash"
+        ],
+        "embed_model_candidates": [
+            "models/text-embedding-004"
+        ],
+        "model_retry_count": 3
+    },
+    "clustering": {
+        "similarity_threshold": 0.70
+    },
+    "filtering": {
+        "blacklisted_keywords": [
+            "天気",
+            "乗り換え",
+            "ログイン",
+            "amazon",
+            "youtube",
+            "マップ"
+        ],
+        "llm_system_prompt": "あなたは検索クエリの意図を分類するアシスタントです。提示された検索クエリが『知識の習得、概念の理解、単語の意味の調査、技術的な問題解決』を目的としている場合は 'True' を出力してください。単なるサイトへの移動（ナビゲーション）、エンタメの消費、日常タスク（天気やルート検索）が目的である場合は 'False' を出力してください。出力は True または False のみとし、他の文字列を含めないでください。"
+    },
+    "github": {
+        "owner": "owner_name",
+        "repo": "repo_name",
+        "issue_similarity_threshold": 0.30
+    }
+}

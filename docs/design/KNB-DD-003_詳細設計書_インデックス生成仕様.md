@@ -120,8 +120,7 @@ related_documents:
 def get_creation_date(filepath):
     """git log --follow --reverse で最初のコミット日を取得"""
     result = subprocess.run(
-        ["git", "log", "--follow", "--reverse", "--format=%aI", "--", filepath],
-        capture_output=True, text=True
+        ["git", "log", "--follow", "--reverse", "--format=%aI", "--", filepath], capture_output=True, text=True
     )
     lines = result.stdout.strip().splitlines()
     if lines:

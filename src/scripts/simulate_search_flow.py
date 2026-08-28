@@ -1,0 +1,349 @@
+"""検索履歴の流れを模擬（シミュレート）し、実際に選ばれるナレッジ・クエリを分かりやすく出力するスクリプト。"""
+
+import argparse
+from datetime import datetime, timedelta, timezone
+from importlib import import_module
+import logging
+import os
+from pathlib import Path
+import sys
+from typing import TYPE_CHECKING, Any
+
+from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from personal_knowledge.dao.base_dao import BrowserHistoryDAO
+    from personal_knowledge.domain.analyzer import SessionAnalyzer
+    from personal_knowledge.domain.deduplicator import SessionDeduplicator
+    from personal_knowledge.domain.intent_filter import IntentFilter
+    from personal_knowledge.domain.models import SearchEntry
+    from personal_knowledge.integration.issue_router import IssueRouter
+    from personal_knowledge.integration.local_file_client import LocalFileIssueClient
+    from personal_knowledge.service import PersonalKnowledgeService
+
+load_dotenv()
+
+# src/ をモジュール検索パスに追加
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+if not TYPE_CHECKING:
+    BrowserHistoryDAO = import_module("personal_knowledge.dao.base_dao").BrowserHistoryDAO
+    SessionAnalyzer = import_module("personal_knowledge.domain.analyzer").SessionAnalyzer
+    SessionDeduplicator = import_module("personal_knowledge.domain.deduplicator").SessionDeduplicator
+    IntentFilter = import_module("personal_knowledge.domain.intent_filter").IntentFilter
+    SearchEntry = import_module("personal_knowledge.domain.models").SearchEntry
+    IssueRouter = import_module("personal_knowledge.integration.issue_router").IssueRouter
+    LocalFileIssueClient = import_module("personal_knowledge.integration.local_file_client").LocalFileIssueClient
+    PersonalKnowledgeService = import_module("personal_knowledge.service").PersonalKnowledgeService
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("simulate_search_flow")
+
+
+class MockHistoryDAO(BrowserHistoryDAO):
+    """シミュレーション用モック DAO。"""
+
+    def __init__(self, mock_entries: list[SearchEntry], name: str = "MockBrowser") -> None:
+        super().__init__()
+        self.mock_entries = mock_entries
+        self._name = name
+
+    @property
+    def default_history_path(self) -> Path:
+        return Path("/dev/null")
+
+    @property
+    def browser_name(self) -> str:
+        return self._name
+
+    def _extract_from_sqlite(self, db_path: Path, limit: int) -> list[SearchEntry]:
+        return self.mock_entries
+
+    def fetch_search_entries(self, limit: int = 500) -> list[SearchEntry]:
+        return self.mock_entries
+
+
+def create_sample_search_history() -> list[SearchEntry]:
+    """シミュレーション用のサンプル検索履歴データを生成する (デモ用9件)。"""
+    now = datetime.now(timezone.utc)
+
+    # シナリオ1: Python Dataclass の調査
+    t1 = now - timedelta(hours=3)
+    entries_scene1 = [
+        SearchEntry(timestamp=t1, keyword="python dataclass 使い方", source_browser="chrome"),
+        SearchEntry(timestamp=t1 + timedelta(minutes=2), keyword="python dataclass 使い方", source_browser="chrome"),
+        SearchEntry(
+            timestamp=t1 + timedelta(minutes=4),
+            keyword="python dataclass field default_factory",
+            source_browser="chrome",
+        ),
+        SearchEntry(
+            timestamp=t1 + timedelta(minutes=8),
+            keyword="python dataclass post_init 例",
+            source_browser="edge",
+        ),
+    ]
+
+    # シナリオ2: FastAPI 非同期処理の調査
+    t2 = now - timedelta(hours=1)
+    entries_scene2 = [
+        SearchEntry(
+            timestamp=t2,
+            keyword="fastapi async def sync def 違い",
+            source_browser="firefox",
+        ),
+        SearchEntry(
+            timestamp=t2 + timedelta(minutes=5),
+            keyword="fastapi concurrency threadpool",
+            source_browser="firefox",
+        ),
+        SearchEntry(
+            timestamp=t2 + timedelta(minutes=10),
+            keyword="fastapi async def performance benchmark",
+            source_browser="chrome",
+        ),
+    ]
+
+    # シナリオ3: 単発・文脈なし検索 (動的除外対象)
+    t3 = now - timedelta(minutes=10)
+    entries_scene3 = [
+        SearchEntry(timestamp=t3, keyword="サイコロ", source_browser="chrome"),
+        SearchEntry(timestamp=t3 + timedelta(minutes=1), keyword="128GB", source_browser="chrome"),
+    ]
+
+    return entries_scene1 + entries_scene2 + entries_scene3
+
+
+def create_sample_open_issues() -> list[dict[str, Any]]:
+    """シミュレーション用のサンプル Open Issue リスト (既存Issue) を生成する。"""
+    return [
+        {
+            "number": 101,
+            "title": "Python Dataclassの活用と設計パターン",
+            "body": "Pythonのdataclassモジュールを使ったデータ構造定義とフィールドカスタマイズについての調査ノート。post_initやfield default_factoryの使い方。",
+            "comments": [],
+        }
+    ]
+
+
+def run_simulation(
+    session_gap_seconds: int = 1800,
+    min_queries: int = 2,
+    similarity_threshold: float = 0.3,
+    dedup_window_seconds: int = 300,
+    use_real_browser: bool = True,
+    use_gemini: bool = True,
+) -> None:
+    """検索履歴処理のパイプラインシミュレーションを実行する。"""
+    api_key_status = (
+        "検出されました (キーが有効です)"
+        if os.environ.get("GEMINI_API_KEY")
+        else "未検出 (GEMINI_API_KEY が未設定です)"
+    )
+
+    logger.info("=" * 80)
+    data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (9件)"
+    ai_status_str = "有効 (標準)" if use_gemini else "無効 (--no-gemini)"
+    logger.info(
+        f"⚙️  【設定パラメータ】 データソース: {data_source_str} | Gemini AI判定: {ai_status_str} | "
+        f"GEMINI_API_KEY: {api_key_status} | "
+        f"session_gap={session_gap_seconds}s, min_queries={min_queries}, "
+        f"similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
+    )
+    logger.info("=" * 80)
+
+    # 履歴データの読み込み
+    if use_real_browser:
+        logger.info("\n🔍 【STEP 1】 実際のブラウザ (Chrome/Edge/Firefox) から検索履歴を取得中...")
+        temp_service = PersonalKnowledgeService()
+        raw_entries = temp_service.collect_raw_entries()
+        logger.info(f"  -> 実際のブラウザから取得した生検索ログ総数: {len(raw_entries)} 件")
+        daos = temp_service.daos
+    else:
+        logger.info("\n🔍 【STEP 1】 デモ用サンプル検索ログの準備 (9件)")
+        raw_entries = create_sample_search_history()
+        for idx, entry in enumerate(raw_entries, 1):
+            logger.info(
+                f"  Raw Entry #{idx:02d} | [{entry.timestamp.strftime('%H:%M:%S')}] "
+                f"[{entry.source_browser:7s}] {entry.keyword}"
+            )
+        daos = [MockHistoryDAO(raw_entries)]
+
+    mock_issues = create_sample_open_issues()
+    logger.info("\n" + "=" * 80)
+    logger.info("📚 【STEP 2] 照合対象となる既存のナレッジ (Open Issues)")
+    logger.info("=" * 80)
+    for issue in mock_issues:
+        logger.info(f"  Existing Issue #{issue['number']}: {issue['title']}")
+
+    # 意図フィルタ (動的単一トークンフィルタ + Gemini API)
+    intent_filter = IntentFilter()
+
+    # カスタム選定パラメータを組み込んだサービスインスタンス
+    deduplicator = SessionDeduplicator(time_window_seconds=dedup_window_seconds)
+    analyzer = SessionAnalyzer(session_gap_seconds=session_gap_seconds, min_queries=min_queries)
+    router = IssueRouter(similarity_threshold=similarity_threshold)
+
+    service = PersonalKnowledgeService(
+        daos=daos,
+        issue_client=LocalFileIssueClient(),
+        deduplicator=deduplicator,
+        analyzer=analyzer,
+        router=router,
+        intent_filter=intent_filter if use_gemini else False,
+    )
+
+    # ステップ実行で途中経過も取得
+    deduped_entries, sessions = service.process_entries_to_sessions(raw_entries)
+    result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
+
+    # 除外されたログの分析 (サンプル時表示)
+    if not use_real_browser:
+        deduped_set = {(e.timestamp, e.keyword) for e in deduped_entries}
+        session_queries_set = {q for s in sessions for q in s.queries}
+
+        logger.info("\n" + "=" * 80)
+        logger.info("🚫 【STEP 3】 採択されなかった (除外された) 検索ログと理由")
+        logger.info("=" * 80)
+        for entry in raw_entries:
+            if intent_filter.is_single_token_non_tech(entry.keyword):
+                logger.info(
+                    f"  ❌ [動的単一語除外] 「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
+                    f"       └ 理由: 1トークンのみで技術辞書に含まれないコンテキスト不十分単語"
+                )
+            elif (entry.timestamp, entry.keyword) not in deduped_set:
+                logger.info(
+                    f"  ❌ [重複除外]        「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
+                    f"       └ 理由: {dedup_window_seconds}秒以内の同一クエリ重複のためマージ"
+                )
+            elif entry.keyword not in session_queries_set:
+                logger.info(
+                    f"  ❌ [ノイズ除外]      「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
+                    f"       └ 理由: 連続した技術調査セッションを満たさない単発ログ (最小{min_queries}件未満)"
+                )
+    else:
+        excluded_count = len(raw_entries) - sum(len(s.queries) for s in sessions)
+        logger.info("\n" + "=" * 80)
+        logger.info(
+            f"🚫 【STEP 3】 除外サマリー: {excluded_count} 件のクエリが [動的コンテキスト不在 / 重複 / 単発 / 非技術] として除外されました"
+        )
+        logger.info("=" * 80)
+
+    logger.info("\n" + "=" * 80)
+    logger.info(f"🎯 【STEP 4】 実際にナレッジ/Issueとして「選ばれた」セッション ({len(sessions)} 件)")
+    logger.info("=" * 80)
+
+    for idx, (session, decision) in enumerate(zip(sessions, result.decisions), 1):
+        logger.info(f"\n[選出ナレッジ #{idx}] --------------------------------------------------")
+
+        if decision.action == "create_issue":
+            logger.info("  📌 決定アクション:   【✨ 新規Issueとして選出】")
+            logger.info(f"  🏷️  生成タイトル:     {decision.title}")
+            logger.info("  💡 選定理由:         既存のどのIssueとも一致しない新しい技術トピックのため新規起票")
+        else:
+            logger.info("  📌 決定アクション:   【📝 既存Issueへのコメント追記として選出】")
+            logger.info(f"  🏷️  対象Issue:        #{decision.target_issue_number}")
+            logger.info(f"  📊 語彙類似度スコア: {decision.similarity_score:.4f} (閾値 {similarity_threshold} 以上)")
+            logger.info("  💡 選定理由:         既存Issueトピックと類似度が高いため、関連ナレッジとして追記統合")
+
+        logger.info("\n  🔍 採用・選定された検索クエリ一覧:")
+        for q_idx, q in enumerate(session.queries, 1):
+            logger.info(f"      {q_idx}. {q}")
+
+        # プレビュー表示
+        logger.info("\n  📄 生成されるナレッジ本文 (プレビュー):")
+        body_lines = decision.body.strip().split("\n")
+        for line in body_lines[:6]:
+            logger.info(f"      {line}")
+        if len(body_lines) > 6:
+            logger.info("      ...")
+
+    logger.info("\n" + "=" * 80)
+    logger.info("📊 パイプライン統計サマリー")
+    logger.info("=" * 80)
+    logger.info(f"  ・全取得検索ログ数:   {result.raw_entries_count} 件")
+    logger.info(f"  ・重複排除後ログ数:   {result.deduped_entries_count} 件")
+    logger.info(f"  ・選定されたセッション: {result.sessions_count} 件")
+    logger.info(f"  ・新規Issue作成判定:  {sum(1 for d in result.decisions if d.action == 'create_issue')} 件")
+    logger.info(f"  ・既存Issue追記判定:  {sum(1 for d in result.decisions if d.action == 'add_comment')} 件")
+
+    # API Usage Tracker (Gemini API 使用量と制限枠の表示)
+    if use_gemini:
+        stats = intent_filter.usage_stats
+        logger.info("\n" + "=" * 80)
+        logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
+        logger.info("=" * 80)
+        logger.info(f"  ・対象モデル:       {intent_filter.chat_model}")
+        logger.info(
+            f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count / 1500 * 100:.2f}%)"
+        )
+        logger.info(f"  ・入力トークン数:   {stats.prompt_tokens} tokens")
+        logger.info(f"  ・出力トークン数:   {stats.candidates_tokens} tokens")
+        logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
+        logger.info("  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
+
+    logger.info("\n✅ シミュレーション完了: Issueへの書き込みは一切行われていません (dry_run)。")
+
+
+def main() -> None:
+    """CLI エントリーポイント。"""
+    parser = argparse.ArgumentParser(
+        description="検索履歴の選定シミュレーション実行スクリプト (デフォルトで Gemini API 判定を標準有効化)"
+    )
+    parser.add_argument(
+        "--demo",
+        "--mock",
+        dest="demo_mode",
+        action="store_true",
+        help="実際のブラウザDBではなく、デモ用サンプル9件でシミュレーション動作させる場合に指定",
+    )
+    parser.add_argument(
+        "--no-gemini",
+        dest="use_gemini",
+        action="store_false",
+        help="Gemini AI 意図判定を無効化し、ルールベースのみで動作させる場合に指定",
+    )
+    parser.set_defaults(use_gemini=True)
+
+    parser.add_argument(
+        "--session-gap-seconds",
+        type=int,
+        default=1800,
+        help="同一セッションとみなす検索間隔の最大秒数 (デフォルト: 1800秒 = 30分)",
+    )
+    parser.add_argument(
+        "--min-queries",
+        type=int,
+        default=2,
+        help="セッションとして採択する最小検索クエリ件数 (デフォルト: 2件)",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.3,
+        help="既存Issue追記判定の類似度閾値 (デフォルト: 0.3)",
+    )
+    parser.add_argument(
+        "--dedup-window-seconds",
+        type=int,
+        default=300,
+        help="同一キーワードの重複排除を行う時間ウィンドウ秒数 (デフォルト: 300秒 = 5分)",
+    )
+    args = parser.parse_args()
+
+    run_simulation(
+        session_gap_seconds=args.session_gap_seconds,
+        min_queries=args.min_queries,
+        similarity_threshold=args.similarity_threshold,
+        dedup_window_seconds=args.dedup_window_seconds,
+        use_real_browser=not args.demo_mode,
+        use_gemini=args.use_gemini,
+    )
+
+
+if __name__ == "__main__":
+    main()

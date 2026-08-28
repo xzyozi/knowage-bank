@@ -1,4 +1,5 @@
 import os
+
 from dotenv import load_dotenv
 
 # プロジェクトルートの .env をロード
@@ -13,4 +14,3 @@ GITHUB_TOKEN = os.getenv("KNOWAGE_BANK_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN
 
 # MCP Deep Research 連携用
 DEEPRESEARCH_SSE_URL = os.getenv("KNOWAGE_BANK_DEEPRESEARCH_SSE_URL", "http://localhost:8000/sse")
-

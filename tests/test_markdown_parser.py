@@ -1,8 +1,9 @@
-import pytest
-from app.utils.markdown_parser import FlexibleMarkdownParser
+from typing import Any
 from app.article_builder import ArticleBuilder
+from app.utils.markdown_parser import FlexibleMarkdownParser
 
-def test_flexible_markdown_parser_frontmatter():
+
+def test_flexible_markdown_parser_frontmatter() -> None:
     md_text = """---
 title: "AWS KIROとCursorの比較・移行手順"
 eyebrow: "AI > 開発ワークフロー"
@@ -37,7 +38,8 @@ A: AWSが提供するAIコードエディタです。
     assert "<h2>基本機能</h2>" in data["body_html"]
     assert "<li>機能1: 高速な検索</li>" in data["body_html"]
 
-def test_article_builder_with_flexible_markdown():
+
+def test_article_builder_with_flexible_markdown() -> None:
     md_text = """---
 title: "自由構成Markdownのテスト"
 eyebrow: "開発 > バックエンド"
@@ -59,7 +61,8 @@ def hello():
     assert "<h2>導入</h2>" in html_output
     assert '<pre><code class="language-python">' in html_output
 
-def test_stage0_5_and_stage3_pipeline():
+
+def test_stage0_5_and_stage3_pipeline() -> None:
     raw_md = """---
 title: "統計データ活用の実態調査"
 eyebrow: "AI > 統計"
@@ -82,15 +85,15 @@ URL: https://www.mofa.go.jp
     data = {
         "markdown_text": raw_md,
         "citations_keep": [11, 21],  # 20 は LLM により除外指定
-        "citation_labels": {
-            "11": "e-Stat ポータル",
-            "21": "外務省 2026年世論調査"
-        }
+        "citation_labels": {"11": "e-Stat ポータル", "21": "外務省 2026年世論調査"},
     }
     html_output = builder.build_article_html(data)
 
     # 引用番号が 1, 2 にリナンバリングされているか確認
-    assert '<sup><a href="#ref-1">1</a>,<a href="#ref-2">2</a></sup>' in html_output or '<sup><a href="#ref-1">1</a></sup>' in html_output
+    assert (
+        '<sup><a href="#ref-1">1</a>,<a href="#ref-2">2</a></sup>' in html_output
+        or '<sup><a href="#ref-1">1</a></sup>' in html_output
+    )
     # 20 番の除外確認
     assert "example.com/junk" not in html_output
     # アンカーおよびラベルの確認
@@ -99,7 +102,8 @@ URL: https://www.mofa.go.jp
     assert '<li id="ref-2">' in html_output
     assert '<a href="https://www.mofa.go.jp" target="_blank" rel="noopener">外務省 2026年世論調査</a>' in html_output
 
-def test_pipe_table_and_mermaid_parsing():
+
+def test_pipe_table_and_mermaid_parsing() -> None:
     md_text = """
 ## 表のテスト
 
@@ -115,9 +119,10 @@ graph TD
 """
     parser = FlexibleMarkdownParser(md_text)
     data = parser.parse()
-    
-    assert '<table class="figure">' in data["body_html"]
+
+    assert '<div class="figure table-wrapper">' in data["body_html"]
+    assert "<table>" in data["body_html"]
     assert '<th scope="col">パターン</th>' in data["body_html"]
-    assert '<td><strong>線形</strong></td>' in data["body_html"]
+    assert "<td><strong>線形</strong></td>" in data["body_html"]
     assert '<div class="mermaid">' in data["body_html"]
-    assert 'A --> B' in data["body_html"]
+    assert "A --> B" in data["body_html"]

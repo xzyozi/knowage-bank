@@ -15,13 +15,16 @@ dependencies = [
     "openai>=1.0.0",
     "python-dotenv>=1.0.0",
     "jinja2>=3.0.0",
-    "mcp>=0.1.0"
+    "mcp>=0.1.0",
+    "httpx>=0.28.1,<0.29.0",
+    "google-genai>=1.73.0,<2.0.0"
 ]
 
 [project.optional-dependencies]
 # 開発・テスト環境専用のパッケージ（共通デファクトスタンダード）
 dev = [
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
     "mypy>=1.0.0"
 ]
@@ -30,7 +33,7 @@ dev = [
 # Linter & Formatter (Ruff)
 # ==========================================
 [tool.ruff]
-line-length = 120
+line-length = 500
 exclude = [
     ".git",
     "__pycache__",
@@ -44,11 +47,14 @@ exclude = [
 [tool.ruff.lint]
 # E: pycodestyle errors, F: Pyflakes, W: pycodestyle warnings, I: isort
 select = ["E", "F", "W", "I"]
-ignore = []
+ignore = ["E501"]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 500
 
 [tool.ruff.lint.isort]
 # 自分のプロジェクトのパッケージ名を指定（自動ソート時にローカルパッケージとして認識させるため）
-known-first-party = ["src", "app"]
+known-first-party = ["src", "app", "personal_knowledge"]
 
 # ==========================================
 # Type Checker (Mypy)

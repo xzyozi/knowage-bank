@@ -1,0 +1,77 @@
+{
+  "last_sync_at": "2026-06-28T05:05:19Z",
+  "issues": {
+    "99": {
+      "number": 99,
+      "title": "Kiro specs folder configuration guidelines",
+      "body": "Kiroのspecs/フォルダで要件定義やシステム設計書を管理する際の標準的なディレクトリ構造と命名規則について解説してください。",
+      "state": "open",
+      "status": "processed",
+      "processed_at": "2026-06-15T12:54:35Z",
+      "article_file": "issue-99-kiro-specs-folder-configuratio.html"
+    },
+    "7": {
+      "number": 7,
+      "title": "LLMを活用した試験学習支援の全体像と課題",
+      "body": "API連携とJSON構造化によるコンテンツ自動登録 \n大規模な学習データ管理のためのシステム的な処理手法を詳述する\nプロンプトエンジニアリングによる回答精度と品質の制御 \nプロンプトエンジニアリングによる回答精度と品質の制御に関する詳細情報を提供する",
+      "state": "closed",
+      "status": "processed",
+      "processed_at": "2026-06-15T16:13:50Z",
+      "article_file": "issue-7-llmを活用した試験学習支援の全体像と課題.html"
+    },
+    "8": {
+      "number": 8,
+      "title": "最新(2026/6/16現在）のlocalLLMについて",
+      "body": "性能等の比較等を行ってください\n",
+      "state": "closed",
+      "status": "processed",
+      "processed_at": "2026-06-15T23:17:39Z",
+      "article_file": "issue-8-最新2026616現在のlocalllmについて.html"
+    },
+    "9": {
+      "number": 9,
+      "title": "Gitのブランチ管理方法について",
+      "body": "どのようなブランチごいいかを考える",
+      "state": "closed",
+      "status": "processed",
+      "processed_at": "2026-06-16T00:39:55Z",
+      "article_file": "issue-9-gitのブランチ管理方法について.html"
+    },
+    "11": {
+      "number": 11,
+      "title": "OpenSpecについて",
+      "body": "Ossなのでソースは公開されています\n\nこれらを利用して新しいシステムを構築する場合の拡張案(内部ソースは変更せずインターフェース等の変化)\nとまたそもそもどのようなことができるかについて",
+      "state": "open",
+      "status": "failed",
+      "processed_at": null,
+      "article_file": null
+    },
+    "12": {
+      "number": 12,
+      "title": "Openspecを使用して新しいシステムを構築する",
+      "body": "これらを利用して新しいシステムを構築する場合の拡張案(内部ソースは変更せずインターフェース等の変化)\nとまたそもそもどのようなことができるかについて",
+      "state": "closed",
+      "status": "processed",
+      "processed_at": "2026-06-18T12:34:04Z",
+      "article_file": "issue-12-openspecを使用して新しいシステムを構築する.html"
+    },
+    "13": {
+      "number": 13,
+      "title": "Aiderの使い方",
+      "body": "https://github.com/Aider-AI/aider\n以下リポジトリでの基本的な使い方から\n応用的にしようもしくはモジュールとして活用する視点も取り入れてください",
+      "state": "open",
+      "status": "failed",
+      "processed_at": null,
+      "article_file": null
+    },
+    "14": {
+      "number": 14,
+      "title": "Opencodeの自動化について",
+      "body": "オーケストレイトできるか\nまたするする方法、アーキテクチャ",
+      "state": "open",
+      "status": "processed",
+      "processed_at": "2026-06-23T14:28:27Z",
+      "article_file": "issue-14-opencodeの自動化について.html"
+    }
+  }
+}
