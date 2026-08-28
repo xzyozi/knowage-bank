@@ -64,7 +64,8 @@ class FileLock:
             else:
                 import fcntl
 
-                fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+                flock = getattr(fcntl, "flock")
+                flock(self._file.fileno(), getattr(fcntl, "LOCK_UN"))
         finally:
             self._file.close()
             self._file = None
@@ -81,7 +82,9 @@ class FileLock:
         else:
             import fcntl
 
-            fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            flock = getattr(fcntl, "flock")
+            lock_flags = getattr(fcntl, "LOCK_EX") | getattr(fcntl, "LOCK_NB")
+            flock(self._file.fileno(), lock_flags)
 
 
 logger = logging.getLogger("core.vram_manager")
