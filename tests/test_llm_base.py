@@ -36,7 +36,7 @@ def test_extract_json_from_text_invalid() -> None:
     assert extract_json_from_text("") is None
 
 
-@patch("tools.base.llm_client_base.OpenAI")
+@patch("core.llm_client_base.OpenAI")
 def test_base_llm_client_completion(mock_openai_cls: Any) -> None:
     mock_client = MagicMock()
     mock_openai_cls.return_value = mock_client
