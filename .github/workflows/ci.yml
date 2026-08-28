@@ -1,11 +1,13 @@
 name: CI
 
 on:
-  # public はPages等の公開用ブランチとして扱い、CIの対象外とする。
+  # PR作業ブランチは pull_request でのみ検証する。
+  # main への直接pushおよびマージ後だけ push CI を実行する。
+  # develop を含むPR元ブランチの更新では二重起動させない。
   push:
-    branches-ignore:
-      - public
-      - public/**
+    branches:
+      - main
+  # public はPages等の公開用ブランチとして扱い、CIの対象外とする。
   pull_request:
     branches-ignore:
       - public
