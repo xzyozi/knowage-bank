@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 from personal_knowledge.dao.base_dao import BrowserHistoryDAO
 from personal_knowledge.dao.chromium_dao import ChromiumHistoryDAO
@@ -53,7 +53,7 @@ class PersonalKnowledgeService:
         router: IssueRouter | None = None,
         issue_client: BaseIssueClient | None = None,
         github_client: BaseIssueClient | None = None,
-        intent_filter: IntentFilter | False | None = None,
+        intent_filter: IntentFilter | Literal[False] | None = None,
         semantic_clusterer: SemanticClusterer | None = None,
     ) -> None:
         """PersonalKnowledgeService を初期化する。"""
