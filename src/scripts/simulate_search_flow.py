@@ -51,7 +51,7 @@ class MockHistoryDAO(BrowserHistoryDAO):
 
 
 def create_sample_search_history() -> list[SearchEntry]:
-    """シミュレーション用のサンプル検索履歴データを生成する。"""
+    """シミュレーション用のサンプル検索履歴データを生成する (デモ用8件)。"""
     now = datetime.now(timezone.utc)
 
     # シナリオ1: Python Dataclass の調査
@@ -91,7 +91,7 @@ def create_sample_search_history() -> list[SearchEntry]:
         ),
     ]
 
-    # シナリオ3: 単発の検索 (ノイズ/設定によって選定対象になるかどうか変わる)
+    # シナリオ3: 単発の検索
     t3 = now - timedelta(minutes=10)
     entries_scene3 = [
         SearchEntry(timestamp=t3, keyword="今日の天気 東京", source_browser="chrome"),
@@ -117,22 +117,33 @@ def run_simulation(
     min_queries: int = 2,
     similarity_threshold: float = 0.3,
     dedup_window_seconds: int = 300,
+    use_real_browser: bool = False,
 ) -> None:
     """検索履歴処理のパイプラインシミュレーションを実行する。"""
     logger.info("=" * 80)
+    data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (8件)"
     logger.info(
-        f"⚙️  【設定パラメータ】 session_gap={session_gap_seconds}s, min_queries={min_queries}, "
-        f"similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
+        f"⚙️  【設定パラメータ】 データソース: {data_source_str} | session_gap={session_gap_seconds}s, "
+        f"min_queries={min_queries}, similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
     )
     logger.info("=" * 80)
 
-    logger.info("\n🔍 【STEP 1】 収集された全検索ログ (ブラウザ履歴から読み込まれた生ログ)")
-    mock_entries = create_sample_search_history()
-    for idx, entry in enumerate(mock_entries, 1):
-        logger.info(
-            f"  Raw Entry #{idx:02d} | [{entry.timestamp.strftime('%H:%M:%S')}] "
-            f"[{entry.source_browser:7s}] {entry.keyword}"
-        )
+    # 履歴データの読み込み
+    if use_real_browser:
+        logger.info("\n🔍 【STEP 1】 実際のブラウザ (Chrome/Edge/Firefox) から検索履歴を取得中...")
+        temp_service = PersonalKnowledgeService()
+        raw_entries = temp_service.collect_raw_entries()
+        logger.info(f"  -> 実際のブラウザから取得した生検索ログ総数: {len(raw_entries)} 件")
+        daos = temp_service.daos
+    else:
+        logger.info("\n🔍 【STEP 1】 デモ用サンプル検索ログの準備 (8件)")
+        raw_entries = create_sample_search_history()
+        for idx, entry in enumerate(raw_entries, 1):
+            logger.info(
+                f"  Raw Entry #{idx:02d} | [{entry.timestamp.strftime('%H:%M:%S')}] "
+                f"[{entry.source_browser:7s}] {entry.keyword}"
+            )
+        daos = [MockHistoryDAO(raw_entries)]
 
     mock_issues = create_sample_open_issues()
     logger.info("\n" + "=" * 80)
@@ -142,13 +153,12 @@ def run_simulation(
         logger.info(f"  Existing Issue #{issue['number']}: {issue['title']}")
 
     # カスタム選定パラメータを組み込んだサービスインスタンス
-    mock_dao = MockHistoryDAO(mock_entries)
     deduplicator = SessionDeduplicator(time_window_seconds=dedup_window_seconds)
     analyzer = SessionAnalyzer(session_gap_seconds=session_gap_seconds, min_queries=min_queries)
     router = IssueRouter(similarity_threshold=similarity_threshold)
 
     service = PersonalKnowledgeService(
-        daos=[mock_dao],
+        daos=daos,
         issue_client=LocalFileIssueClient(),
         deduplicator=deduplicator,
         analyzer=analyzer,
@@ -156,30 +166,36 @@ def run_simulation(
     )
 
     # ステップ実行で途中経過も取得
-    deduped_entries, sessions = service.process_entries_to_sessions(mock_entries)
+    deduped_entries, sessions = service.process_entries_to_sessions(raw_entries)
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
 
-    # 除外されたログの分析
-    deduped_set = {(e.timestamp, e.keyword) for e in deduped_entries}
-    session_queries_set = {q for s in sessions for q in s.queries}
+    # 除外されたログの分析 (サンプル時または少量時に表示)
+    if not use_real_browser:
+        deduped_set = {(e.timestamp, e.keyword) for e in deduped_entries}
+        session_queries_set = {q for s in sessions for q in s.queries}
+
+        logger.info("\n" + "=" * 80)
+        logger.info("🚫 【STEP 3】 採択されなかった (除外された) 検索ログと理由")
+        logger.info("=" * 80)
+        for entry in raw_entries:
+            if (entry.timestamp, entry.keyword) not in deduped_set:
+                logger.info(
+                    f"  ❌ [重複除外]    「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
+                    f"       └ 理由: {dedup_window_seconds}秒以内の同一クエリ重複のためマージ"
+                )
+            elif entry.keyword not in session_queries_set:
+                logger.info(
+                    f"  ❌ [ノイズ除外]  「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
+                    f"       └ 理由: 連続した技術調査セッションを満たさない単発ログ (最小{min_queries}件未満)"
+                )
+    else:
+        excluded_count = len(raw_entries) - sum(len(s.queries) for s in sessions)
+        logger.info("\n" + "=" * 80)
+        logger.info(f"🚫 【STEP 3】 除外サマリー: {excluded_count} 件のクエリが重複または単発ノイズとして除外されました")
+        logger.info("=" * 80)
 
     logger.info("\n" + "=" * 80)
-    logger.info("🚫 【STEP 3】 採択されなかった (除外された) 検索ログと理由")
-    logger.info("=" * 80)
-    for entry in mock_entries:
-        if (entry.timestamp, entry.keyword) not in deduped_set:
-            logger.info(
-                f"  ❌ [重複除外]    「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
-                f"       └ 理由: {dedup_window_seconds}秒以内の同一クエリ重複のためマージ"
-            )
-        elif entry.keyword not in session_queries_set:
-            logger.info(
-                f"  ❌ [ノイズ除外]  「{entry.keyword}」 ({entry.timestamp.strftime('%H:%M:%S')})\n"
-                f"       └ 理由: 連続した技術調査セッションを満たさない単発ログ (最小{min_queries}件未満)"
-            )
-
-    logger.info("\n" + "=" * 80)
-    logger.info("🎯 【STEP 4】 実際にナレッジ/Issueとして「選ばれた」もの (選定結果)")
+    logger.info(f"🎯 【STEP 4】 実際にナレッジ/Issueとして「選ばれた」セッション ({len(sessions)} 件)")
     logger.info("=" * 80)
 
     for idx, (session, decision) in enumerate(zip(sessions, result.decisions), 1):
@@ -199,10 +215,13 @@ def run_simulation(
         for q_idx, q in enumerate(session.queries, 1):
             logger.info(f"      {q_idx}. {q}")
 
+        # プレビュー表示（先頭5件のみ）
         logger.info("\n  📄 生成されるナレッジ本文 (プレビュー):")
         body_lines = decision.body.strip().split("\n")
-        for line in body_lines:
+        for line in body_lines[:6]:
             logger.info(f"      {line}")
+        if len(body_lines) > 6:
+            logger.info("      ...")
 
     logger.info("\n" + "=" * 80)
     logger.info("📊 パイプライン統計サマリー")
@@ -218,6 +237,11 @@ def run_simulation(
 def main() -> None:
     """CLI エントリーポイント。"""
     parser = argparse.ArgumentParser(description="検索履歴の選定シミュレーション実行スクリプト")
+    parser.add_argument(
+        "--real-browser",
+        action="store_true",
+        help="デモ用8件サンプルではなく、PC上の実際のブラウザ (Chrome/Edge/Firefox) から数百件の実際の検索履歴を取得してシミュレーションを行う",
+    )
     parser.add_argument(
         "--session-gap-seconds",
         type=int,
@@ -249,6 +273,7 @@ def main() -> None:
         min_queries=args.min_queries,
         similarity_threshold=args.similarity_threshold,
         dedup_window_seconds=args.dedup_window_seconds,
+        use_real_browser=args.real_browser,
     )
 
 
