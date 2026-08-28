@@ -1,68 +1,126 @@
 """検索クエリの知識探求意図を判定するフィルタリングモジュール。"""
 
+from dataclasses import dataclass
 import logging
+import re
 
 from personal_knowledge.config_loader import FilteringConfig, load_config
 
 logger = logging.getLogger(__name__)
 
+# 主要な技術キーワード辞書 (1トークンでも正当な技術とみなす辞書)
+KNOWN_TECH_KEYWORDS: set[str] = {
+    "python",
+    "fastapi",
+    "docker",
+    "git",
+    "sql",
+    "react",
+    "vue",
+    "api",
+    "vram",
+    "pytest",
+    "cuda",
+    "ollama",
+    "sqlite",
+    "linux",
+    "ubuntu",
+    "pip",
+    "npm",
+    "uv",
+    "github",
+    "pandas",
+    "numpy",
+    "pytorch",
+    "tensorflow",
+    "llama",
+    "huggingface",
+    "claude",
+    "gemini",
+    "openai",
+    "bash",
+    "powershell",
+    "json",
+    "yaml",
+    "html",
+    "css",
+    "js",
+    "ts",
+    "typescript",
+    "javascript",
+    "c",
+    "cpp",
+    "rust",
+    "go",
+    "golang",
+    "java",
+    "kotlin",
+    "swift",
+    "flutter",
+    "aws",
+    "gcp",
+    "azure",
+}
+
+
+@dataclass
+class ApiUsageStats:
+    """Gemini API の使用量統計。"""
+
+    request_count: int = 0
+    prompt_tokens: int = 0
+    candidates_tokens: int = 0
+    total_tokens: int = 0
+
 
 class IntentFilter:
-    """ブラックリストおよび Gemini API による LLM 判定で、検索クエリの知識探求意図を判定するクラス。"""
+    """動的単一トークン判定および Gemini API による LLM 判定を行うクラス。"""
 
     def __init__(
         self,
-        blacklisted_keywords: list[str] | None = None,
         system_prompt: str | None = None,
         chat_model: str = "gemini-1.5-flash",
         api_key: str | None = None,
+        custom_tech_keywords: set[str] | None = None,
     ) -> None:
-        """IntentFilter を初期化する。
-
-        Args:
-            blacklisted_keywords: 即座に除外する非技術系日常検索キーワードリスト。
-                None の場合は config.json (または既定値) から読み込む。
-            system_prompt: LLM 意図判定用システムプロンプト。None の場合は config.json
-                (または既定値) から読み込む。
-            chat_model: 意図判定に使用する Gemini モデル名。
-            api_key: Gemini API キー。None の場合は環境変数 GEMINI_API_KEY を使用。
-        """
-        if blacklisted_keywords is None or system_prompt is None:
+        """IntentFilter を初期化する。"""
+        if system_prompt is None:
             config: FilteringConfig = load_config().filtering
-            if blacklisted_keywords is None:
-                blacklisted_keywords = config.blacklisted_keywords
-            if system_prompt is None:
-                system_prompt = config.llm_system_prompt
+            system_prompt = config.llm_system_prompt
 
-        self.blacklisted_keywords = blacklisted_keywords
         self.system_prompt = system_prompt
         self.chat_model = chat_model
         self._api_key = api_key
+        self.tech_keywords = KNOWN_TECH_KEYWORDS.union(custom_tech_keywords or set())
+        self.usage_stats = ApiUsageStats()
 
-    def _is_blacklisted(self, keyword: str) -> bool:
-        """キーワードがブラックリストに部分一致するか判定する。
+    def is_single_token_non_tech(self, keyword: str) -> bool:
+        """トークン数が1つだけで、かつ技術キーワード辞書に存在しない文脈なし単語かを動的判定する。"""
+        trimmed = keyword.strip()
+        if not trimmed:
+            return True
 
-        Args:
-            keyword: 判定対象の検索キーワード。
+        # スペースや区切り文字で分割
+        tokens = [t for t in re.split(r"[\s,._/|\-]+", trimmed) if t]
 
-        Returns:
-            bool: ブラックリストに部分一致する場合は True。
-        """
-        normalized = keyword.lower()
-        return any(bl.lower() in normalized for bl in self.blacklisted_keywords)
+        # 2トークン以上 (例: "python dataclass", "128gb vram") はコンテキストありと判断
+        if len(tokens) >= 2:
+            return False
+
+        lowered = trimmed.lower()
+        # 1トークンの場合、技術辞書に含まれていれば正当な技術キーワード
+        if lowered in self.tech_keywords:
+            return False
+
+        # 技術記号やオプション (例: "--real-browser", "-k", "v1.2") は例外として許可
+        if re.match(r"^--?[a-z0-9\-]+$", trimmed) or re.match(r"^v?\d+(\.\d+)+$", trimmed):
+            return False
+
+        # 単一型番パターン (例: "128GB", "RPIN-062") や単一普通名詞 (例: "サイコロ") は文脈なしとして動的除外
+        return True
 
     def _judge_with_llm(self, keyword: str) -> bool:
-        """Gemini API を呼び出し、キーワードの知識探求意図を True/False で判定する。
-
-        API呼び出しやレスポンス解析に失敗した場合は、安全なデフォルトとして
-        False (知識探求目的ではない) を返却する (サイレントフォールト)。
-
-        Args:
-            keyword: 判定対象の検索キーワード。
-
-        Returns:
-            bool: 知識探求目的と判定された場合は True。
-        """
+        """Gemini API を呼び出し、キーワードの知識探求意図を True/False で判定し、トークン数を計測する。"""
         try:
             from google import genai
             from google.genai import types
@@ -76,6 +134,15 @@ class IntentFilter:
                     temperature=0.0,
                 ),
             )
+
+            # 使用量 (usage_metadata) の集計
+            self.usage_stats.request_count += 1
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                meta = response.usage_metadata
+                self.usage_stats.prompt_tokens += getattr(meta, "prompt_token_count", 0) or 0
+                self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
+                self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
+
             result_text = (response.text or "").strip().lower()
             return result_text.startswith("true")
         except Exception as e:
@@ -85,15 +152,9 @@ class IntentFilter:
     def is_knowledge_query(self, keyword: str) -> bool:
         """検索キーワードが知識探求・技術解決目的かどうかを判定する。
 
-        まずブラックリスト判定を行い、部分一致する場合は即座に False を返す。
-        一致しない場合は Gemini API による LLM 二値判定を行う。
-
-        Args:
-            keyword: 判定対象の検索キーワード。
-
-        Returns:
-            bool: 知識探求目的と判定された場合は True。
+        単一トークンかつ技術辞書に含まれないコンテキストなしノイズを動的除外した上で、
+        必要に応じて Gemini LLM 判定を行う。
         """
-        if self._is_blacklisted(keyword):
+        if self.is_single_token_non_tech(keyword):
             return False
         return self._judge_with_llm(keyword)

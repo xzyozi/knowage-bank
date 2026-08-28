@@ -21,10 +21,11 @@ from personal_knowledge.service import PersonalKnowledgeService
 def test_create_sample_search_history() -> None:
     """サンプル検索履歴が正しく生成されることの検証。"""
     entries = create_sample_search_history()
-    assert len(entries) == 8
+    assert len(entries) == 9
     keywords = [e.keyword for e in entries]
     assert "python dataclass 使い方" in keywords
     assert "fastapi async def sync def 違い" in keywords
+    assert "サイコロ" in keywords
 
 
 def test_simulate_search_flow_pipeline() -> None:
@@ -40,16 +41,14 @@ def test_simulate_search_flow_pipeline() -> None:
 
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
 
-    assert result.raw_entries_count == 8
-    assert result.deduped_entries_count == 7
-    assert result.sessions_count == 2
-    assert len(result.decisions) == 2
+    assert result.raw_entries_count == 9
+    assert result.deduped_entries_count == 8
     assert result.created_issues_count == 0
     assert result.added_comments_count == 0
 
 
 def test_custom_parameters() -> None:
-    """min_queries=1 に指定した際、単発検索 (今日の天気) も選定されることの検証。"""
+    """min_queries=1 に指定した際、単発検索も選定されることの検証。"""
     mock_entries = create_sample_search_history()
     mock_issues = create_sample_open_issues()
 

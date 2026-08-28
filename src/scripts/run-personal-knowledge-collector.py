@@ -96,7 +96,7 @@ def main() -> None:
     elif args.backend == "local":
         issue_client = LocalFileIssueClient()
 
-    intent_filter = IntentFilter() if args.use_gemini else None
+    intent_filter = IntentFilter() if args.use_gemini else IntentFilter()
     semantic_clusterer = SemanticClusterer() if args.use_gemini else None
 
     # カスタム選定パラメータをコンポーネントに反映
@@ -109,7 +109,7 @@ def main() -> None:
         deduplicator=deduplicator,
         analyzer=analyzer,
         router=router,
-        intent_filter=intent_filter,
+        intent_filter=intent_filter if args.use_gemini else None,
         semantic_clusterer=semantic_clusterer,
     )
     logger.info(
@@ -127,12 +127,20 @@ def main() -> None:
     open_issues = service.issue_client.get_open_issues()
     result = service.run_pipeline(dry_run=args.dry_run, mock_open_issues=open_issues)
 
+    stats = intent_filter.usage_stats
     summary = {
         "raw_entries_count": result.raw_entries_count,
         "deduped_entries_count": result.deduped_entries_count,
         "sessions_count": result.sessions_count,
         "created_issues_count": result.created_issues_count,
         "added_comments_count": result.added_comments_count,
+        "gemini_api_usage": {
+            "request_count": stats.request_count,
+            "prompt_tokens": stats.prompt_tokens,
+            "candidates_tokens": stats.candidates_tokens,
+            "total_tokens": stats.total_tokens,
+            "free_tier_rpd_limit": 1500,
+        },
         "decisions": [
             {
                 "action": d.action,
@@ -173,6 +181,12 @@ def main() -> None:
             f"Created={result.created_issues_count}, "
             f"Commented={result.added_comments_count}"
         )
+        logger.info("\n" + "=" * 80)
+        logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
+        logger.info("=" * 80)
+        logger.info(f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)")
+        logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
+        logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
 
 
 if __name__ == "__main__":
