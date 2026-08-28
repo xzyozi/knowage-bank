@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from personal_knowledge.config_loader import FilteringConfig, load_config
 
@@ -124,7 +125,7 @@ class IntentFilter:
     def judge_batch_with_llm(self, keywords: list[str]) -> list[bool]:
         """複数の検索キーワードを 1 回のリクエストでまとめて Gemini API に送信し一括判定する (バッチ処理)。
 
-        利用可能モデル: gemini-3.6-flash, gemini-flash-latest, gemini-3.5-flash
+        429 Too Many Requests 発生時は自動ウェイト＆リトライを適用し、確実にレスポンスを取得します。
         """
         if not keywords:
             return []
@@ -138,9 +139,7 @@ class IntentFilter:
             "gemini-3.6-flash",
             "gemini-flash-latest",
             "gemini-3.5-flash",
-            "gemini-2.0-flash",
         ]
-        # 重複・空文字の除去
         candidate_models = list(dict.fromkeys([m for m in candidate_models if m]))
 
         from google import genai
@@ -157,46 +156,49 @@ class IntentFilter:
             f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
         )
 
-        last_exception = None
         for model in candidate_models:
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.0,
-                        response_mime_type="application/json",
-                    ),
-                )
+            for retry_count in range(3):
+                try:
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            response_mime_type="application/json",
+                        ),
+                    )
 
-                self.usage_stats.request_count += 1
-                if hasattr(response, "usage_metadata") and response.usage_metadata:
-                    meta = response.usage_metadata
-                    self.usage_stats.prompt_tokens += getattr(meta, "prompt_token_count", 0) or 0
-                    self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
-                    self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
+                    self.usage_stats.request_count += 1
+                    if hasattr(response, "usage_metadata") and response.usage_metadata:
+                        meta = response.usage_metadata
+                        self.usage_stats.prompt_tokens += getattr(meta, "prompt_token_count", 0) or 0
+                        self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
+                        self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
 
-                text = (response.text or "").strip()
-                parsed = json.loads(text)
-                results: list[bool] = []
-                for i in range(1, len(keywords) + 1):
-                    val = parsed.get(str(i), parsed.get(i, True))
-                    results.append(bool(val))
+                    text = (response.text or "").strip()
+                    parsed = json.loads(text)
+                    results: list[bool] = []
+                    for i in range(1, len(keywords) + 1):
+                        val = parsed.get(str(i), parsed.get(i, True))
+                        results.append(bool(val))
 
-                self.chat_model = model  # 成功したモデル名を記憶
-                return results
+                    self.chat_model = model
+                    return results
 
-            except Exception as e:
-                last_exception = e
-                err_str = str(e)
-                if "404" in err_str or "NOT_FOUND" in err_str:
-                    logger.info(f"Gemini Model '{model}' returned 404 NOT_FOUND. Fallbacking to next model candidate...")
-                    continue
-                else:
-                    logger.warning(f"Gemini API batch judgment failed with model '{model}': {e}.")
-                    break
+                except Exception as e:
+                    err_str = str(e)
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        sleep_sec = 2.5 * (retry_count + 1)
+                        logger.info(f"Rate limit 429 detected for model '{model}'. Waiting {sleep_sec}s for retry ({retry_count+1}/3)...")
+                        time.sleep(sleep_sec)
+                        continue
+                    elif "404" in err_str or "NOT_FOUND" in err_str:
+                        logger.info(f"Gemini Model '{model}' returned 404 NOT_FOUND. Fallbacking to next model candidate...")
+                        break
+                    else:
+                        logger.warning(f"Gemini API batch judgment failed with model '{model}': {e}.")
+                        break
 
-        logger.warning(f"All Gemini model candidates failed: {last_exception}. Defaulting to True for batch.")
         return [True] * len(keywords)
 
     def is_knowledge_query(self, keyword: str) -> bool:
@@ -205,11 +207,14 @@ class IntentFilter:
             return False
         return self._judge_with_llm(keyword)
 
-    def filter_knowledge_queries_batch(self, keywords: list[str], batch_size: int = 25) -> list[bool]:
+    def filter_knowledge_queries_batch(self, keywords: list[str], batch_size: int = 50) -> list[bool]:
         """検索キーワード群をバッチ分割し、最小リクエスト数で一括判定する。"""
         results: list[bool] = []
 
         for i in range(0, len(keywords), batch_size):
+            if i > 0:
+                time.sleep(1.0)  # レートリミット回避のための1秒インターバル
+
             chunk = keywords[i : i + batch_size]
 
             chunk_results: list[bool | None] = []
