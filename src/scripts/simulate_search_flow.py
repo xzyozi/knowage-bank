@@ -52,7 +52,7 @@ class MockHistoryDAO(BrowserHistoryDAO):
 
 
 def create_sample_search_history() -> list[SearchEntry]:
-    """シミュレーション用のサンプル検索履歴データを生成する (デモ用8件)。"""
+    """シミュレーション用のサンプル検索履歴データを生成する (デモ用9件)。"""
     now = datetime.now(timezone.utc)
 
     # シナリオ1: Python Dataclass の調査
@@ -120,14 +120,20 @@ def run_simulation(
     similarity_threshold: float = 0.3,
     dedup_window_seconds: int = 300,
     use_real_browser: bool = True,
-    use_gemini: bool = False,
+    use_gemini: bool = True,
 ) -> None:
-    """検索履歴処理のパイプラインシミュレーションを実行する。"""
+    """検索履歴処理のパイプラインシミュレーションを実行する。
+
+    既定動作 (use_real_browser=True, use_gemini=True): 実際のブラウザ履歴 DB を読み込み、
+    Gemini 判定を標準適用した上で、Issue への影響ゼロ (dry_run=True) で選定シミュレーションを実行します。
+    """
     logger.info("=" * 80)
     data_source_str = "PCの実際のブラウザ履歴 DB" if use_real_browser else "デモ用サンプルデータ (9件)"
+    ai_status_str = "有効 (標準)" if use_gemini else "無効 (--no-gemini)"
     logger.info(
-        f"⚙️  【設定パラメータ】 データソース: {data_source_str} | session_gap={session_gap_seconds}s, "
-        f"min_queries={min_queries}, similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
+        f"⚙️  【設定パラメータ】 データソース: {data_source_str} | Gemini AI判定: {ai_status_str} | "
+        f"session_gap={session_gap_seconds}s, min_queries={min_queries}, "
+        f"similarity_threshold={similarity_threshold}, dedup_window={dedup_window_seconds}s"
     )
     logger.info("=" * 80)
 
@@ -169,14 +175,14 @@ def run_simulation(
         deduplicator=deduplicator,
         analyzer=analyzer,
         router=router,
-        intent_filter=intent_filter if use_gemini else None,
+        intent_filter=intent_filter if use_gemini else False,
     )
 
     # ステップ実行で途中経過も取得
     deduped_entries, sessions = service.process_entries_to_sessions(raw_entries)
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
 
-    # 除外されたログの分析 (動的除外および重複排除のログ)
+    # 除外されたログの分析 (サンプル時表示)
     if not use_real_browser:
         deduped_set = {(e.timestamp, e.keyword) for e in deduped_entries}
         session_queries_set = {q for s in sessions for q in s.queries}
@@ -204,7 +210,7 @@ def run_simulation(
         excluded_count = len(raw_entries) - sum(len(s.queries) for s in sessions)
         logger.info("\n" + "=" * 80)
         logger.info(
-            f"🚫 【STEP 3】 除外サマリー: {excluded_count} 件のクエリが [動的コンテキスト不在 / 重複 / 単発] として除外されました"
+            f"🚫 【STEP 3】 除外サマリー: {excluded_count} 件のクエリが [動的コンテキスト不在 / 重複 / 単発 / 非技術] として除外されました"
         )
         logger.info("=" * 80)
 
@@ -247,16 +253,17 @@ def run_simulation(
     logger.info(f"  ・既存Issue追記判定:  {sum(1 for d in result.decisions if d.action == 'add_comment')} 件")
 
     # API Usage Tracker (Gemini API 使用量と制限枠の表示)
-    stats = intent_filter.usage_stats
-    logger.info("\n" + "=" * 80)
-    logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
-    logger.info("=" * 80)
-    logger.info(f"  ・対象モデル:       {intent_filter.chat_model}")
-    logger.info(f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)")
-    logger.info(f"  ・入力トークン数:   {stats.prompt_tokens} tokens")
-    logger.info(f"  ・出力トークン数:   {stats.candidates_tokens} tokens")
-    logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
-    logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
+    if use_gemini:
+        stats = intent_filter.usage_stats
+        logger.info("\n" + "=" * 80)
+        logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
+        logger.info("=" * 80)
+        logger.info(f"  ・対象モデル:       {intent_filter.chat_model}")
+        logger.info(f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)")
+        logger.info(f"  ・入力トークン数:   {stats.prompt_tokens} tokens")
+        logger.info(f"  ・出力トークン数:   {stats.candidates_tokens} tokens")
+        logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
+        logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
 
     logger.info("\n✅ シミュレーション完了: Issueへの書き込みは一切行われていません (dry_run)。")
 
@@ -264,7 +271,7 @@ def run_simulation(
 def main() -> None:
     """CLI エントリーポイント。"""
     parser = argparse.ArgumentParser(
-        description="検索履歴の選定シミュレーション実行スクリプト (デフォルトで実際のブラウザDBを使用)"
+        description="検索履歴の選定シミュレーション実行スクリプト (デフォルトで Gemini API 判定を標準有効化)"
     )
     parser.add_argument(
         "--demo",
@@ -274,10 +281,13 @@ def main() -> None:
         help="実際のブラウザDBではなく、デモ用サンプル9件でシミュレーション動作させる場合に指定",
     )
     parser.add_argument(
-        "--use-gemini",
-        action="store_true",
-        help="Gemini LLM 意図判定を有効化する (GEMINI_API_KEY が必要な場合に指定)",
+        "--no-gemini",
+        dest="use_gemini",
+        action="store_false",
+        help="Gemini AI 意図判定を無効化し、ルールベースのみで動作させる場合に指定",
     )
+    parser.set_defaults(use_gemini=True)
+
     parser.add_argument(
         "--session-gap-seconds",
         type=int,

@@ -53,7 +53,7 @@ class PersonalKnowledgeService:
         router: IssueRouter | None = None,
         issue_client: BaseIssueClient | None = None,
         github_client: BaseIssueClient | None = None,
-        intent_filter: IntentFilter | None = None,
+        intent_filter: IntentFilter | False | None = None,
         semantic_clusterer: SemanticClusterer | None = None,
     ) -> None:
         """PersonalKnowledgeService を初期化する。
@@ -63,15 +63,10 @@ class PersonalKnowledgeService:
             deduplicator: 重複排除モジュール。None の場合はデフォルト設定を使用。
             analyzer: セッション解析モジュール。None の場合はデフォルト設定を使用。
             router: ルーティング判定モジュール。None の場合はデフォルト設定を使用。
-            issue_client: Issue/ナレッジ格納クライアント。None の場合は環境変数に応じて
-                GitHubIssueClient または LocalFileIssueClient を選択。
-            github_client: 旧互換用エイリアス。issue_client が未指定の場合に使用。
-            intent_filter: 意図判定フィルタ (Gemini API 連携)。None の場合は無効化され、
-                ブラックリスト/LLM判定を行わずルールベースのセッション分割のみで処理する
-                (既定動作。Gemini API 利用にはオプトインでインスタンスを渡す)。
+            issue_client: Issue/ナレッジ格納クライアント。
+            github_client: 旧互換用エイリアス。
+            intent_filter: 意図判定フィルタ。標準で IntentFilter() を使用。False を指定するとAIフィルタを完全に無効化。
             semantic_clusterer: Embeddingベースのセッションクラスタリングモジュール。
-                None の場合は無効化され、`analyzer` によるルールベース (30分間隔) の
-                セッション分割を使用する (既定動作)。
         """
         self.daos = daos or [
             ChromiumHistoryDAO(browser_type="chrome"),
@@ -81,8 +76,13 @@ class PersonalKnowledgeService:
         self.deduplicator = deduplicator or SessionDeduplicator(time_window_seconds=300)
         self.analyzer = analyzer or SessionAnalyzer(session_gap_seconds=1800, min_queries=2)
         self.router = router or IssueRouter(similarity_threshold=0.3)
-        # Gemini API連携はオプトイン: 未指定時はルールベース処理のみで動作する
-        self.intent_filter = intent_filter
+
+        # Gemini 意図判定フィルタを標準化 (False が明示された場合のみ無効化)
+        if intent_filter is False:
+            self.intent_filter = None
+        else:
+            self.intent_filter = intent_filter or IntentFilter()
+
         self.semantic_clusterer = semantic_clusterer
 
         client = issue_client or github_client
@@ -93,15 +93,10 @@ class PersonalKnowledgeService:
                 client = LocalFileIssueClient()
 
         self.issue_client: BaseIssueClient = client
-        # 互換性のためのエイリアス
         self.github_client = client
 
     def collect_raw_entries(self) -> list[SearchEntry]:
-        """全対象ブラウザから検索ログを収集して合算する。
-
-        Returns:
-            list[SearchEntry]: 全ブラウザの検索エントリ合算リスト。
-        """
+        """全対象ブラウザから検索ログを収集して合算する。"""
         all_entries: list[SearchEntry] = []
         for dao in self.daos:
             entries = dao.fetch_search_entries()
@@ -112,20 +107,7 @@ class PersonalKnowledgeService:
     def process_entries_to_sessions(
         self, raw_entries: list[SearchEntry]
     ) -> tuple[list[SearchEntry], list[SearchSession]]:
-        """生エントリから重複排除・意図判定フィルタ・セッション分割を実行する。
-
-        `intent_filter` が設定されている場合は、重複排除後のエントリに対して
-        知識探求意図のフィルタリングを行う (ブラックリスト + Gemini API LLM判定)。
-        `semantic_clusterer` が設定されている場合は、Embeddingベースの意味的
-        クラスタリングを使用する。いずれも未設定の場合は、フィルタリングをスキップし
-        ルールベース (`SessionAnalyzer`) でのセッション分割のみを行う (既定動作)。
-
-        Args:
-            raw_entries: 生検索エントリ一覧。
-
-        Returns:
-            tuple[list[SearchEntry], list[SearchSession]]: (重複排除済みエントリ, 抽出セッション群)。
-        """
+        """生エントリから重複排除・意図判定フィルタ・セッション分割を実行する。"""
         deduped = self.deduplicator.deduplicate(raw_entries)
 
         filtered = deduped
@@ -144,15 +126,7 @@ class PersonalKnowledgeService:
         dry_run: bool = False,
         mock_open_issues: list[dict[str, Any]] | None = None,
     ) -> PipelineExecutionResult:
-        """収集からセッション解析、Issue ルーティングまでの一連のパイプラインを実行する。
-
-        Args:
-            dry_run: True の場合は Issue への起票・コメント追記を行わず判定のみ返す。
-            mock_open_issues: テスト用のモック Open Issue リスト。
-
-        Returns:
-            PipelineExecutionResult: パイプライン実行結果。
-        """
+        """収集からセッション解析、Issue ルーティングまでの一連のパイプラインを実行する。"""
         raw_entries = self.collect_raw_entries()
         deduped, sessions = self.process_entries_to_sessions(raw_entries)
 
@@ -175,7 +149,6 @@ class PersonalKnowledgeService:
                     new_number = self.issue_client.create_issue(decision.title, decision.body)
                     if new_number:
                         created_count += 1
-                        # 次のセッション判定用に open_issues をローカル更新
                         open_issues.append(
                             {
                                 "number": new_number,

@@ -58,11 +58,11 @@ def test_judge_with_llm_parses_true_response() -> None:
     assert intent_filter.usage_stats.total_tokens == 12
 
 
-def test_judge_with_llm_defaults_to_false_on_api_error() -> None:
-    """Gemini API呼び出しが例外を発生させた場合、安全なデフォルト(False)を返すこと。"""
+def test_judge_with_llm_defaults_to_true_on_api_error() -> None:
+    """Gemini API呼び出しが例外を発生させた場合、安全なデフォルト(True)を返すこと。"""
     intent_filter = IntentFilter(api_key="dummy-key")
 
     with patch("google.genai.Client", side_effect=RuntimeError("API unavailable")):
         result = intent_filter._judge_with_llm("some query")
 
-    assert result is False
+    assert result is True

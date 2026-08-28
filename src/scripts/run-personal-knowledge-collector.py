@@ -53,15 +53,12 @@ def main() -> None:
         help="保存先ストレージバックエンド ('github' または 'local')。未指定の場合は環境変数から自動判定。",
     )
     parser.add_argument(
-        "--use-gemini",
-        action="store_true",
-        help=(
-            "Gemini API による意図判定フィルタ (IntentFilter) および Embeddingベースの"
-            "意味的クラスタリング (SemanticClusterer) を有効化する。"
-            "未指定の場合はルールベース (ブラックリストなし・30分間隔セッション分割) のみで動作する。"
-            "GEMINI_API_KEY 環境変数の設定が必要。"
-        ),
+        "--no-gemini",
+        dest="use_gemini",
+        action="store_false",
+        help="Gemini AI 意図判定・Embedding結合を無効化し、ルールベースのみで処理を行う場合に使用",
     )
+    parser.set_defaults(use_gemini=True)
 
     # --- セッション選定チューニング用パラメータ ---
     parser.add_argument(
@@ -96,7 +93,7 @@ def main() -> None:
     elif args.backend == "local":
         issue_client = LocalFileIssueClient()
 
-    intent_filter = IntentFilter() if args.use_gemini else IntentFilter()
+    intent_filter = IntentFilter() if args.use_gemini else False
     semantic_clusterer = SemanticClusterer() if args.use_gemini else None
 
     # カスタム選定パラメータをコンポーネントに反映
@@ -109,12 +106,12 @@ def main() -> None:
         deduplicator=deduplicator,
         analyzer=analyzer,
         router=router,
-        intent_filter=intent_filter if args.use_gemini else None,
+        intent_filter=intent_filter,
         semantic_clusterer=semantic_clusterer,
     )
     logger.info(
         "Starting Personal Knowledge Collection & Routing pipeline "
-        f"(backend: {service.issue_client.__class__.__name__}, "
+        f"(backend: {service.issue_client.__class__.__name__}, gemini: {args.use_gemini}, "
         f"session_gap: {args.session_gap_seconds}s, min_queries: {args.min_queries}, "
         f"similarity_threshold: {args.similarity_threshold})..."
     )
@@ -127,20 +124,13 @@ def main() -> None:
     open_issues = service.issue_client.get_open_issues()
     result = service.run_pipeline(dry_run=args.dry_run, mock_open_issues=open_issues)
 
-    stats = intent_filter.usage_stats
+    stats = intent_filter.usage_stats if isinstance(intent_filter, IntentFilter) else None
     summary = {
         "raw_entries_count": result.raw_entries_count,
         "deduped_entries_count": result.deduped_entries_count,
         "sessions_count": result.sessions_count,
         "created_issues_count": result.created_issues_count,
         "added_comments_count": result.added_comments_count,
-        "gemini_api_usage": {
-            "request_count": stats.request_count,
-            "prompt_tokens": stats.prompt_tokens,
-            "candidates_tokens": stats.candidates_tokens,
-            "total_tokens": stats.total_tokens,
-            "free_tier_rpd_limit": 1500,
-        },
         "decisions": [
             {
                 "action": d.action,
@@ -181,12 +171,15 @@ def main() -> None:
             f"Created={result.created_issues_count}, "
             f"Commented={result.added_comments_count}"
         )
-        logger.info("\n" + "=" * 80)
-        logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
-        logger.info("=" * 80)
-        logger.info(f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)")
-        logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
-        logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
+        if stats:
+            logger.info("\n" + "=" * 80)
+            logger.info("💡 【Gemini API 使用量・利用制限ステータス (Usage Tracker)】")
+            logger.info("=" * 80)
+            logger.info(
+                f"  ・API呼び出し回数:  {stats.request_count} 回 / 1日上限 1,500 回 (使用率: {stats.request_count/1500*100:.2f}%)"
+            )
+            logger.info(f"  ・合計消費トークン: {stats.total_tokens} tokens (1分あたり上限 1,000,000 tokens)")
+            logger.info(f"  ・概算コスト:       $0.00 (Google GenAI API 無料枠 Free Tier 範囲内)")
 
 
 if __name__ == "__main__":

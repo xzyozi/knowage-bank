@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import logging
+import os
 import re
 
 from personal_knowledge.config_loader import FilteringConfig, load_config
@@ -100,32 +101,34 @@ class IntentFilter:
         if not trimmed:
             return True
 
-        # スペースや区切り文字で分割
         tokens = [t for t in re.split(r"[\s,._/|\-]+", trimmed) if t]
 
-        # 2トークン以上 (例: "python dataclass", "128gb vram") はコンテキストありと判断
         if len(tokens) >= 2:
             return False
 
         lowered = trimmed.lower()
-        # 1トークンの場合、技術辞書に含まれていれば正当な技術キーワード
         if lowered in self.tech_keywords:
             return False
 
-        # 技術記号やオプション (例: "--real-browser", "-k", "v1.2") は例外として許可
         if re.match(r"^--?[a-z0-9\-]+$", trimmed) or re.match(r"^v?\d+(\.\d+)+$", trimmed):
             return False
 
-        # 単一型番パターン (例: "128GB", "RPIN-062") や単一普通名詞 (例: "サイコロ") は文脈なしとして動的除外
         return True
 
     def _judge_with_llm(self, keyword: str) -> bool:
-        """Gemini API を呼び出し、キーワードの知識探求意図を True/False で判定し、トークン数を計測する。"""
+        """Gemini API を呼び出し、キーワードの知識探求意図を True/False で判定し、トークン数を計測する。
+
+        APIキーがない場合や例外発生時は、安全なフォールバックとして True (通過) を返却する。
+        """
         try:
+            api_key = self._api_key or os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                return True
+
             from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self._api_key) if self._api_key else genai.Client()
+            client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=self.chat_model,
                 contents=keyword,
@@ -135,7 +138,6 @@ class IntentFilter:
                 ),
             )
 
-            # 使用量 (usage_metadata) の集計
             self.usage_stats.request_count += 1
             if hasattr(response, "usage_metadata") and response.usage_metadata:
                 meta = response.usage_metadata
@@ -146,8 +148,8 @@ class IntentFilter:
             result_text = (response.text or "").strip().lower()
             return result_text.startswith("true")
         except Exception as e:
-            logger.warning(f"Gemini API intent judgment failed for keyword '{keyword}': {e}. Defaulting to False.")
-            return False
+            logger.warning(f"Gemini API intent judgment failed for keyword '{keyword}': {e}. Defaulting to True.")
+            return True
 
     def is_knowledge_query(self, keyword: str) -> bool:
         """検索キーワードが知識探求・技術解決目的かどうかを判定する。

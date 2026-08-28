@@ -37,6 +37,7 @@ def test_simulate_search_flow_pipeline() -> None:
     service = PersonalKnowledgeService(
         daos=[mock_dao],
         issue_client=LocalFileIssueClient(),
+        intent_filter=False,
     )
 
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
@@ -58,6 +59,7 @@ def test_custom_parameters() -> None:
         daos=[mock_dao],
         issue_client=LocalFileIssueClient(),
         analyzer=analyzer,
+        intent_filter=False,
     )
 
     result = service.run_pipeline(dry_run=True, mock_open_issues=mock_issues)
@@ -71,4 +73,5 @@ def test_run_simulation_execution() -> None:
         min_queries=2,
         similarity_threshold=0.3,
         use_real_browser=False,
+        use_gemini=False,
     )
