@@ -8,6 +8,7 @@ import re
 import time
 
 from personal_knowledge.config_loader import FilteringConfig, load_config
+from personal_knowledge.infrastructure.model_resolver import ModelResolutionError, ModelResolver
 
 logger = logging.getLogger(__name__)
 
@@ -82,18 +83,21 @@ class IntentFilter:
     def __init__(
         self,
         system_prompt: str | None = None,
-        chat_model: str = "gemini-3.6-flash",
+        chat_model: str | None = None,
         api_key: str | None = None,
         custom_tech_keywords: set[str] | None = None,
+        model_resolver: ModelResolver | None = None,
     ) -> None:
         """IntentFilter を初期化する。"""
+        config = load_config()
         if system_prompt is None:
-            config: FilteringConfig = load_config().filtering
-            system_prompt = config.llm_system_prompt
+            filtering_config: FilteringConfig = config.filtering
+            system_prompt = filtering_config.llm_system_prompt
 
         self.system_prompt = system_prompt
-        self.chat_model = chat_model
+        self.chat_model = chat_model or config.api.chat_model
         self._api_key = api_key
+        self.model_resolver = model_resolver or ModelResolver(config=config.api, api_key=api_key)
         self.tech_keywords = KNOWN_TECH_KEYWORDS.union(custom_tech_keywords or set())
         self.usage_stats = ApiUsageStats()
 
@@ -134,19 +138,12 @@ class IntentFilter:
         if not api_key:
             return [True] * len(keywords)
 
-        candidate_models = [
-            self.chat_model,
-            "gemini-3.6-flash",
-            "gemini-flash-latest",
-            "gemini-3.5-flash",
-        ]
-        candidate_models = list(dict.fromkeys([m for m in candidate_models if m]))
+        candidate_models, source = self.model_resolver.resolve_candidates("generate_content")
+        self.model_resolver.start_resolution("generate_content", source)
 
-        from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
-
+        client = self.model_resolver.get_client()
         batch_payload = {str(i): kw for i, kw in enumerate(keywords, 1)}
         prompt = (
             "以下の検索クエリリストについて、それぞれの探求意図を判定してください。\n"
@@ -156,8 +153,15 @@ class IntentFilter:
             f"{json.dumps(batch_payload, ensure_ascii=False, indent=2)}"
         )
 
-        for model in candidate_models:
-            for retry_count in range(3):
+        pending_models = list(candidate_models)
+        attempted_models: set[str] = set()
+        while pending_models:
+            model = pending_models.pop(0)
+            if model in attempted_models:
+                continue
+            attempted_models.add(model)
+
+            for retry_count in range(self.model_resolver.config.model_retry_count):
                 try:
                     response = client.models.generate_content(
                         model=model,
@@ -175,29 +179,38 @@ class IntentFilter:
                         self.usage_stats.candidates_tokens += getattr(meta, "candidates_token_count", 0) or 0
                         self.usage_stats.total_tokens += getattr(meta, "total_token_count", 0) or 0
 
-                    text = (response.text or "").strip()
-                    parsed = json.loads(text)
-                    results: list[bool] = []
-                    for i in range(1, len(keywords) + 1):
-                        val = parsed.get(str(i), parsed.get(i, True))
-                        results.append(bool(val))
-
+                    parsed = json.loads((response.text or "").strip())
+                    results = [bool(parsed.get(str(i), parsed.get(i, True))) for i in range(1, len(keywords) + 1)]
                     self.chat_model = model
+                    self.model_resolver.record_success("generate_content", model, source)
                     return results
+                except Exception as error:
+                    if self.model_resolver.raises_immediately(error):
+                        raise ModelResolutionError(f"Geminiモデル '{model}' の利用を継続できません: {error}") from error
 
-                except Exception as e:
-                    err_str = str(e)
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        sleep_sec = 2.5 * (retry_count + 1)
-                        logger.info(f"Rate limit 429 detected for model '{model}'. Waiting {sleep_sec}s for retry ({retry_count+1}/3)...")
-                        time.sleep(sleep_sec)
+                    category = self.model_resolver.classify_error(error)
+                    self.model_resolver.record_fallback("generate_content", model, error)
+                    if category == "not_found":
+                        self.model_resolver.invalidate("generate_content")
+                        refreshed_models, source = self.model_resolver.resolve_candidates(
+                            "generate_content", force_refresh=True, exclude=attempted_models
+                        )
+                        pending_models.extend(candidate for candidate in refreshed_models if candidate not in pending_models)
+                        break
+                    if category in {"rate_limited", "transient"} and retry_count + 1 < self.model_resolver.config.model_retry_count:
+                        sleep_seconds = self.model_resolver.retry_delay_seconds(retry_count)
+                        logger.info(
+                            "Geminiモデル '%s' が%sのため %.1f 秒後に再試行します (%d/%d)",
+                            model,
+                            category,
+                            sleep_seconds,
+                            retry_count + 1,
+                            self.model_resolver.config.model_retry_count,
+                        )
+                        time.sleep(sleep_seconds)
                         continue
-                    elif "404" in err_str or "NOT_FOUND" in err_str:
-                        logger.info(f"Gemini Model '{model}' returned 404 NOT_FOUND. Fallbacking to next model candidate...")
-                        break
-                    else:
-                        logger.warning(f"Gemini API batch judgment failed with model '{model}': {e}.")
-                        break
+                    logger.warning("Geminiモデル '%s' の意図判定に失敗しました: %s", model, error)
+                    break
 
         return [True] * len(keywords)
 

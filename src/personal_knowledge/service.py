@@ -13,6 +13,7 @@ from personal_knowledge.domain.deduplicator import SessionDeduplicator
 from personal_knowledge.domain.intent_filter import IntentFilter
 from personal_knowledge.domain.models import SearchEntry, SearchSession
 from personal_knowledge.domain.semantic_clusterer import SemanticClusterer
+from personal_knowledge.infrastructure.model_resolver import ModelResolver
 from personal_knowledge.integration.base_issue_client import BaseIssueClient
 from personal_knowledge.integration.github_client import GitHubIssueClient
 from personal_knowledge.integration.issue_router import IssueRouter, RoutingDecision
@@ -55,6 +56,7 @@ class PersonalKnowledgeService:
         github_client: BaseIssueClient | None = None,
         intent_filter: IntentFilter | Literal[False] | None = None,
         semantic_clusterer: SemanticClusterer | None = None,
+        model_resolver: ModelResolver | None = None,
     ) -> None:
         """PersonalKnowledgeService を初期化する。"""
         self.daos = daos or [
@@ -65,11 +67,12 @@ class PersonalKnowledgeService:
         self.deduplicator = deduplicator or SessionDeduplicator(time_window_seconds=300)
         self.analyzer = analyzer or SessionAnalyzer(session_gap_seconds=1800, min_queries=2)
         self.router = router or IssueRouter(similarity_threshold=0.3)
+        self.model_resolver = model_resolver or ModelResolver()
 
         if intent_filter is False:
             self.intent_filter = None
         else:
-            self.intent_filter = intent_filter or IntentFilter()
+            self.intent_filter = intent_filter or IntentFilter(model_resolver=self.model_resolver)
 
         self.semantic_clusterer = semantic_clusterer
 
