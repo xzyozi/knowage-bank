@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import sys
 import importlib.util
@@ -10,10 +11,13 @@ pytestmark = pytest.mark.integration
 # ハイフンを含むスクリプトファイル 'sync-article-dates.py' を動的インポート
 script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "scripts", "sync-article-dates.py"))
 spec = importlib.util.spec_from_file_location("sync_article_dates", script_path)
+if spec is None or spec.loader is None:
+    raise RuntimeError("sync-article-dates.py ????????")
 sync_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync_module)
 
-def test_parse_html_metadata(tmp_path):
+
+def test_parse_html_metadata(tmp_path: Any) -> None:
     """HTMLからタイトル、リード文、eyebrow、メタデータが正しく抽出できるかのテスト"""
     test_html = """<!doctype html>
 <html lang="ja">
@@ -39,7 +43,8 @@ def test_parse_html_metadata(tmp_path):
     assert meta["eyebrow"] == "開発 > バックエンド"
     assert meta["meta_text"] == "追加メタテキスト"
 
-def test_update_article_date(tmp_path):
+
+def test_update_article_date(tmp_path: Any) -> None:
     """HTML内の日付が新しい日付に書き換わるかのテスト"""
     test_html = """<!doctype html>
 <html>
@@ -58,9 +63,10 @@ def test_update_article_date(tmp_path):
 
     updated_content = file_path.read_text(encoding="utf-8")
     assert 'datetime="2026-06-14"' in updated_content
-    assert '作成日: 2026年6月14日' in updated_content
+    assert "作成日: 2026年6月14日" in updated_content
 
-def test_get_creation_date_fallback(tmp_path):
+
+def test_get_creation_date_fallback(tmp_path: Any) -> None:
     """Git履歴のないファイルの場合、ファイルの更新日が取得されるかのテスト"""
     file_path = tmp_path / "new-file.html"
     file_path.write_text("content", encoding="utf-8")

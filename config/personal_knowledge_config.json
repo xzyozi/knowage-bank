@@ -2,7 +2,20 @@
     "api": {
         "provider": "gemini",
         "chat_model": "gemini-1.5-flash",
-        "embed_model": "models/text-embedding-004"
+        "embed_model": "models/text-embedding-004",
+        "model_discovery": true,
+        "model_cache_ttl_seconds": 86400,
+        "allow_preview_models": false,
+        "allowed_models": [],
+        "chat_model_candidates": [
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3.5-flash"
+        ],
+        "embed_model_candidates": [
+            "models/text-embedding-004"
+        ],
+        "model_retry_count": 3
     },
     "clustering": {
         "similarity_threshold": 0.70

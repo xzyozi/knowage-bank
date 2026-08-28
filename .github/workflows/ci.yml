@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  # PR作業ブランチは pull_request でのみ検証する。
+  # main への直接pushおよびマージ後だけ push CI を実行する。
+  # develop を含むPR元ブランチの更新では二重起動させない。
+  push:
+    branches:
+      - main
+  # public はPages等の公開用ブランチとして扱い、CIの対象外とする。
+  pull_request:
+    branches-ignore:
+      - public
+      - public/**
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    # public / public/* をPR元にする場合もCIを実行しない。
+    if: github.event_name != 'pull_request' || (github.head_ref != 'public' && !startsWith(github.head_ref, 'public/'))
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+
+      - name: Run Ruff (Linter)
+        run: |
+          uv run ruff check .
+
+      - name: Run Ruff (Formatter Check)
+        run: |
+          uv run ruff format --check .
+
+      - name: Run Mypy (Type Check)
+        run: |
+          uv run mypy .
+
+      - name: Run Pytest
+        run: |
+          uv run pytest

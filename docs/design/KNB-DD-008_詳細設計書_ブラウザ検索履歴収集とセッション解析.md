@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様）"
 document_type: "detailed_design"
-version: "1.4"
+version: "1.8"
 created_at: "2026-08-23"
-updated_at: "2026-08-25"
+updated_at: "2026-08-28"
 author: "開発チーム"
 purpose: "Chromium/Firefoxからの非同期検索履歴抽出、5分以内重複排除、30分セッション分割/Gemini Embeddingコサイン類似度クラスタリング、意図判定LLMフィルタ、Jaccard/Overlap類似度によるIssueルーティングおよびBaseIssueClientの具象仕様を定義するため"
 related_documents:
@@ -18,8 +18,8 @@ related_documents:
 | :------------- | :------------------------------------------------------------------------ |
 | 文書番号       | KNB-DD-008                                                                |
 | ドキュメント名 | 詳細設計書（ブラウザ検索履歴収集・セッション解析・Issueルーティング仕様） |
-| 版数           | Rev.1.5 (Mypy型エラー修復・Ruffフォーマット・テスト整合反映)              |
-| 改訂日         | 2026-08-27                                                                |
+| 版数           | Rev.1.8（Geminiモデル解決・フォールバック基盤の実装反映）                 |
+| 改訂日         | 2026-08-28                                                                |
 | 作成日         | 2026-08-23                                                                |
 | 作成者         | 開発チーム                                                                |
 
@@ -34,8 +34,8 @@ related_documents:
 1. **データアクセス層 (DAO)**: Chrome, Edge, Firefox からの安全なSQLite読み込みと検索クエリ抽出
 2. **ビジネスロジック層 (Domain)**:
    - 時系列5分以内重複排除 (`SessionDeduplicator`)
-   - クエリ意図判定フィルタ (`IntentFilter`: ブラックリスト＋Gemini API `gemini-1.5-flash` LLM判定)
-   - 30分セッション分割 (`SessionAnalyzer`) および ベクトル埋め込みクラスタリング (`SemanticClusterer`: `text-embedding-004`＋コサイン類似度)
+   - クエリ意図判定フィルタ (`IntentFilter`: 動的一単語判定＋Gemini APIによるバッチLLM判定)
+   - 30分セッション分割 (`SessionAnalyzer`) および ベクトル埋め込みクラスタリング (`SemanticClusterer`: `models/text-embedding-004`＋コサイン類似度)
 3. **連携層 (Integration)**: Jaccard / Szymkiewicz-Simpson Overlap 係数に基づく Open Issue へのルーティング、および `BaseIssueClient`（GitHub REST API / ローカルJSONストレージ）抽象化
 
 ---
@@ -52,10 +52,16 @@ sequenceDiagram
     participant Deduplicator as SessionDeduplicator
     participant Filter as IntentFilter (Blacklist / Gemini API)
     participant Analyzer as SemanticClusterer / SessionAnalyzer
+    participant Resolver as ModelResolver
     participant Router as IssueRouter
     participant Client as BaseIssueClient (GitHubIssueClient / LocalFileIssueClient)
 
     Scheduler ->> Aggregator: run_pipeline(dry_run)
+    opt Gemini連携が有効
+        Aggregator ->> Resolver: resolve_models(force_refresh=False)
+        Resolver ->> Resolver: キャッシュ確認 / models.list() / 用途別候補選定
+        Resolver -->> Aggregator: ModelResolution（生成用・埋め込み用の候補）
+    end
     Aggregator ->> ChromiumDAO: fetch_search_entries()
     ChromiumDAO -->> Aggregator: list[SearchEntry]
     Aggregator ->> FirefoxDAO: fetch_search_entries()
@@ -65,15 +71,15 @@ sequenceDiagram
     Note over Deduplicator: 時系列ソート & 5分以内同一キーワード結合<br>(ブラウザ識別子マージ)
     Deduplicator -->> Aggregator: list[SearchEntry] (重複排除済)
 
-    opt intent_filter が設定されている場合 (--use-gemini指定時のみ)
+    opt intent_filter が有効な場合（サービス既定。公式CLIでは `--no-gemini` 未指定時）
         loop 各 SearchEntry ごと
-            Aggregator ->> Filter: is_knowledge_query(keyword)
-            Note over Filter: 1. ブラックリスト判定 (天気, ナビ, 娯楽等)<br>2. Gemini API (gemini-1.5-flash) True/False 判定
+            Aggregator ->> Filter: filter_knowledge_queries_batch(keywords)
+            Note over Filter: 1. 非技術的な単一語を辞書・形式で除外<br>2. Gemini APIによるバッチTrue/False判定
             Filter -->> Aggregator: is_valid (bool)
         end
     end
 
-    alt semantic_clusterer が設定されている場合 (--use-gemini指定時のみ)
+    alt semantic_clusterer が有効な場合（公式CLI既定。`--no-gemini` 未指定時）
         Aggregator ->> Analyzer: process_entries(entries)
         Note over Analyzer: ベクトル埋め込み (text-embedding-004) + コサイン類似度で一括まとめ (セッション化)
         Analyzer -->> Aggregator: list[SearchSession]
@@ -135,6 +141,16 @@ sequenceDiagram
 | `title`               | `str`         |  必須  | なし         | 新規起票時のタイトル（`add_comment` 時は空文字）                   |
 | `body`                | `str`         |  必須  | なし         | 起票本文または追記コメント本文                                     |
 
+#### ④ `ModelResolution`（モデル選定および実利用履歴）
+| フィールド名       | データ型      | 必須性 | デフォルト値 | 説明                                                       |
+| :----------------- | :------------ | :----: | :----------- | :--------------------------------------------------------- |
+| `purpose`          | `str`         |  必須  | なし         | `generate_content` または `embed_content`                  |
+| `selected_model`   | `str \| None` |  必須  | `None`       | 当該実行で実際に利用したモデル名。未解決時は `None`        |
+| `candidate_source` | `str`         |  必須  | なし         | `api_discovery`、`cache`、`configured_fallback` のいずれか |
+| `fallback_count`   | `int`         |  必須  | `0`          | 初期候補から切り替えた回数                                 |
+| `fallback_reasons` | `list[str]`   |  必須  | 空リスト     | 404、429、タイムアウト等の候補切替理由。認証情報は含めない |
+| `resolved_at`      | `datetime`    |  必須  | なし         | モデル候補を解決したUTC日時                                |
+
 ---
 
 ### 3.2 データアクセス層 (DAO) 仕様
@@ -170,22 +186,22 @@ sequenceDiagram
   3. 一致した場合、直前のエントリにマージ（`source_browser` が異なればカンマ区切り等で結合、タイムスタンプは最新または開始時を保持）。
 * **出力**: 重複排除された `list[SearchEntry]`
 
-#### ② 意図判定フィルタリング (`IntentFilter.is_knowledge_query`)
-* **目的**: 天気予報、乗換案内、ログイン、動画鑑賞等の日常消費・ナビゲーション検索を除外し、知識習得・技術解決目的のクエリのみを抽出する。
-* **有効化方式**: `PersonalKnowledgeService` のオプション引数 `intent_filter` にインスタンスを渡した場合のみ有効化される（オプトイン）。CLI では `--use-gemini` フラグ指定時に有効化される。未指定時はフィルタリングを行わず、重複排除後の全エントリがそのままセッション分割の入力となる。
+#### ② 意図判定フィルタリング (`IntentFilter.filter_knowledge_queries_batch`)
+* **目的**: 文脈を持たない非技術的な単一語を早期に除外し、それ以外の検索クエリをGemini APIで一括判定する。
+* **有効化方式**:
+  - `PersonalKnowledgeService` を直接生成する場合、`intent_filter` を未指定または `IntentFilter` のインスタンス指定にすると有効となる。無効化する場合は `intent_filter=False` を明示指定する。
+  - 公式コレクタCLIではGemini連携が既定で有効であり、`--no-gemini` 指定時だけ無効となる。
 * **手順**:
-  1. **ブラックリスト判定 (`_is_blacklisted`)**: `config/personal_knowledge_config.json` の `filtering.blacklisted_keywords` （既定値: `["天気", "乗り換え", "ログイン", "amazon", "youtube", "マップ"]`）に、小文字化した上で部分一致する場合は即座に `False` を返却（LLM呼び出しは行わない）。
-  2. **LLM意図判定 (`_judge_with_llm`)**: `google-genai` SDK (`google.genai.Client`) を用いて Gemini API (既定モデル: `gemini-1.5-flash`) を呼び出す。
-     - `client.models.generate_content(model=chat_model, contents=keyword, config=types.GenerateContentConfig(system_instruction=system_prompt, temperature=0.0))` の形式で呼び出す。
-     - レスポンステキストを小文字化・前後空白除去した上で `"true"` から始まる場合のみ `True` と判定する。
-     - システムプロンプトは `config/personal_knowledge_config.json` の `filtering.llm_system_prompt` から読み込む（既定値は §3.2 に同じ）。
-  3. **エラー時フォールバック**: API呼び出しまたはレスポンス解析で例外が発生した場合は、警告ログを出力し安全なデフォルトとして `False` を返却する（サイレントフォールト）。
+  1. **単一語の早期除外 (`is_single_token_non_tech`)**: 空文字、技術キーワード辞書にない単一トークンを `False` とする。オプション形式（例: `--flag`）およびバージョン形式（例: `v1.2.3`）は判定対象から除外せず、Gemini判定へ送る。
+  2. **LLM意図判定 (`judge_batch_with_llm`)**: 判定対象を最大50件ずつまとめ、`ModelResolver` が `generateContent` 対応モデルから解決した候補順で `google-genai` SDK (`google.genai.Client`) へ送信する。404時は候補キャッシュを無効化して次候補へ切り替え、429時は限定回数の待機・リトライ後に次候補を試行する。
+  3. **レスポンス判定**: JSON形式の `{"1": true, "2": false}` を読み取り、各クエリに対応する真偽値を返す。
+  4. **エラー時フォールバック**: `GEMINI_API_KEY` 未設定、全候補モデルの失敗、またはレスポンス処理の失敗時は、収集処理を止めない可用性優先の既定値として対象クエリを `True`（通過）とする。
 
 #### ③ セッション解析・クラスタリング (`SessionAnalyzer` / `SemanticClusterer`)
 * **ルールベース方式 (`SessionAnalyzer`)**: 既定で使用される方式。
   - 時系列順に走査し、直前のクエリとの時間間隔が **30分（1,800秒）以内** であれば同一セッションに追加。クエリ数が1件のみの単発検索はノイズとみなし破棄。
-* **ベクトル埋め込み方式 (`SemanticClusterer.process_entries`)**: `PersonalKnowledgeService` のオプション引数 `semantic_clusterer` にインスタンスを渡した場合、`SessionAnalyzer` の代わりに使用される（オプトイン。CLI `--use-gemini` 指定時）。
-  - `google-genai` SDK の `client.models.embed_content(model=embed_model, contents=keyword)` （既定モデル: `models/text-embedding-004`）で各クエリを個別にベクトル化する。API失敗時はゼロベクトル（空リスト）にフォールバックする。
+* **ベクトル埋め込み方式 (`SemanticClusterer.process_entries`)**: `PersonalKnowledgeService` のオプション引数 `semantic_clusterer` にインスタンスを渡した場合、`SessionAnalyzer` の代わりに使用される（公式コレクタCLIでは既定で有効、`--no-gemini` 指定時は無効）。
+  - `ModelResolver` が `embedContent` 対応モデルから解決した候補を用いて、`google-genai` SDK の `client.models.embed_content(model=embed_model, contents=keyword)` を呼び出す。404時は次候補へ切り替え、API失敗時はゼロベクトル（空リスト）にフォールバックする。
   - **クラスタリングアルゴリズム（貪欲最近傍法）**: 時系列順に走査し、各エントリのベクトルと、既存の全クラスタの代表ベクトル（各クラスタの先頭エントリのベクトル）とのコサイン類似度を総当たりで計算する。最大類似度が閾値 (`similarity_threshold`, 既定 `0.70`) 以上であれば最も類似度が高いクラスタに追加し、閾値未満（または既存クラスタが無い）場合は新規クラスタを作成する。
   - コサイン類似度は `(A・B) / (|A| × |B|)` で計算し、いずれかがゼロベクトルの場合は `0.0` を返す（ゼロ除算回避）。
   - 各クラスタから `SearchSession`（開始/終了日時、クエリ一覧、関与ブラウザ一覧）を生成する。単発（1件のみ）クラスタも破棄せずセッション化する点が `SessionAnalyzer` と異なる。
@@ -214,7 +230,26 @@ sequenceDiagram
 - GitHub に依存せず、ローカル JSON ファイル (`data/personal_knowledge_issues.json`) またはメモリ上で Issue データを保持・更新する。
 - 自動インクリメント ID 発行、永続化・再読み込み機能を搭載。
 
-#### ② Issue ルーティング判定 (`IssueRouter`)
+#### ② モデル解決・フォールバック (`ModelResolver`)
+> **実装済み**: `ModelResolver` は、固定候補モデル方式を置き換え、動的モデル一覧取得・用途別候補解決・TTLキャッシュ・障害別フォールバックを提供する。
+
+本コンポーネントはGemini APIで利用可能なモデルを検出し、意図判定とEmbeddingの用途ごとに実行候補を解決する。実行中の各クエリ処理は解決済み候補だけを利用し、モデル一覧APIを繰り返し呼び出してはならない。
+
+| 項目       | 仕様                                                                                                                                                                              |
+| :--------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 一覧取得   | `client.models.list()` を利用し、起動時・キャッシュTTL切れ時（既定86,400秒）・404検知時・明示更新時だけモデル一覧を更新する。                                                     |
+| 用途別選別 | 意図判定用は `generateContent`、Embedding用は `embedContent` に対応するモデルだけを対象にする。両用途の候補リストは混在させない。                                                 |
+| 優先順位   | 許可リスト・プレビュー版許可設定で対象を絞り、安定版を優先して数値バージョンを降順に並べる。リリース日時をAPIから得られないため、名前の単純な辞書順を「最新順」として使用しない。 |
+| 緊急候補   | 一覧取得不能時は設定ファイルの `chat_model_candidates` または `embed_model_candidates` を順に試す。このリストは動的検出失敗時だけに使用する。                                     |
+| 結果記録   | 実利用モデル、候補の取得元、フォールバック回数・理由を `ModelResolution` に格納し、`PipelineExecutionResult`、JSON出力、ログへ渡す。Issue本文への表示は設定で有効化する。         |
+
+**候補切替契約**:
+- 404 / `NOT_FOUND`: 選択済み候補を無効化し、モデル一覧を再取得した上で次候補を試す。
+- 429 / `RESOURCE_EXHAUSTED`: 指数的な待機で限定回数リトライ後、次候補を試す。
+- タイムアウト・5xx: 限定回数リトライ後、次候補を試す。
+- 400・401・403: リクエスト形式、APIキー、権限の不備として即時に失敗を返す。候補切替で隠蔽しない。
+
+#### ③ Issue ルーティング判定 (`IssueRouter`)
 * **単語トークナイズ**:
   - 英数字単語、カタカナ単語、漢字連続語、日本語フレーズを正規化抽出し、ノイズワード（ストップワード）を除去。
 * **類似度計算アルゴリズム**: Szymkiewicz-Simpson Overlap 係数 / Jaccard 係数
@@ -230,11 +265,13 @@ sequenceDiagram
 
 ## 4. エラーハンドリングと例外設計
 
-| 発生レイヤー      | 想定異常事象                           | 処置                                                                                                                                                                                |
-| :---------------- | :------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **DAO層**         | ブラウザ起動中によるDBロック           | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ                                                                                                                      |
-| **Domain層**      | Gemini API 意図判定/埋め込みエラー     | `IntentFilter._judge_with_llm` / `SemanticClusterer._embed_text` 内で例外を捕捉し警告ログを出力。安全なデフォルト（意図判定は `False`、埋め込みは空リスト＝ゼロベクトル相当）を返却 |
-| **Integration層** | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期                                                                                                            |
+| 発生レイヤー       | 想定異常事象                           | 処置                                                                                                                                                                                                   |
+| :----------------- | :------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DAO層**          | ブラウザ起動中によるDBロック           | 一時コピーにより回避。コピー自体の失敗時はサイレントにスキップ                                                                                                                                         |
+| **モデル解決基盤** | 一覧取得失敗 / 選択済みモデルの404     | TTL内キャッシュを利用し、一覧取得失敗時は設定済み緊急候補へ切替。404時は候補キャッシュを無効化して再解決する。                                                                                         |
+| **Domain層**       | Gemini API 意図判定/埋め込みエラー     | `IntentFilter.judge_batch_with_llm` / `SemanticClusterer._embed_text` は `ModelResolver` の候補切替契約に従う。全候補失敗時は、意図判定は `True`（通過）、埋め込みは空リスト（ゼロベクトル相当）を返却 |
+| **モデル解決基盤** | 400 / 401 / 403                        | リクエスト、認証、権限の不備として明示的に失敗を返す。モデル候補の切替は行わない。                                                                                                                     |
+| **Integration層**  | GitHub API トークン未設定 / 通信エラー | ログ記録し `LocalFileIssueClient` へのフォールバックまたは次回実行へ延期                                                                                                                               |
 
 ---
 
@@ -245,16 +282,21 @@ sequenceDiagram
 2. **重複排除・セッション解析テスト (`test_personal_knowledge_domain.py`)**:
    - 5分以内の同一キーワード結合、30分間隔ルールベースセッション分割を検証。
 3. **意図判定フィルタテスト (`test_intent_filter.py`)**:
-   - ブラックリスト一致時にLLM呼び出しを行わないこと、Gemini APIモックによる `True`/`False` 判定、API例外時に `False` へフォールバックすることを検証。
+   - 非技術的な単一語がLLM呼び出しなしで除外されること、Gemini APIモックによる `True`/`False` 判定を検証。
+   - `GEMINI_API_KEY` 未設定時およびAPI例外時に、処理継続のため `True` へフォールバックすることを検証。
 4. **意味的クラスタリングテスト (`test_semantic_clusterer.py`)**:
    - コサイン類似度関数（同一/直交/ゼロベクトル）、Embeddingモックによるセッション統合、API例外時に空リストへフォールバックすることを検証。
 5. **Issueクライアントテスト (`test_local_file_client.py`)**:
    - `LocalFileIssueClient` のメモリ動作および JSON ファイルへのデータ読み書き・永続化を検証。
 6. **ルーティング・オーケストレーションテスト (`test_personal_knowledge_router.py` / `test_personal_knowledge_service.py` / `test_service_intent_and_clustering.py`)**:
    - 語彙トークナイズおよび Overlap / Jaccard 類似度計算の検証。
-   - `intent_filter` / `semantic_clusterer` 未指定時に既定のルールベース処理のみで動作すること、指定時にオプトイン機能が正しく呼び出されることを検証。
+   - `PersonalKnowledgeService` での `IntentFilter` の既定有効化、`intent_filter=False` による無効化、および `SemanticClusterer` の明示指定時だけ意味的クラスタリングを行うことを検証。
 7. **設定ファイル読み込みテスト (`test_config_loader.py`)**:
    - 設定ファイル欠落時・不正JSON時にデフォルト値へフォールバックすること、カスタム値の読み込みを検証。
+8. **モデル解決基盤テスト (`test_model_resolver.py`)**:
+   - `models.list()` のモックから、`generateContent` / `embedContent` の用途別選別、安定版・数値バージョン順の優先順位、TTLキャッシュを検証。
+   - 一覧取得失敗時の設定済み緊急候補への切替、404時の再解決、429・5xx時のリトライ後の候補切替、400・401・403で候補切替しないことを検証。
+   - `ModelResolution` に実利用モデル、候補の取得元、フォールバック回数・理由が記録されることを検証。
 
 ---
 
@@ -267,4 +309,7 @@ sequenceDiagram
 | Rev.1.2 | 2026-08-25 | 開発チーム | Google Gemini API (`gemini-1.5-flash`, `text-embedding-004`) によるクエリ意図判定フィルタおよびコサイン類似度意味的クラスタリング仕様の反映          |
 | Rev.1.3 | 2026-08-25 | 開発チーム | 規約違反修正: DTO定義・パス定義・`BaseIssueClient`インターフェースのコード直貼りをテーブル形式に変更し、SSOT宣言文を追加                             |
 | Rev.1.4 | 2026-08-25 | 開発チーム | 実装反映: `IntentFilter`/`SemanticClusterer`（`google-genai` SDK使用）の実装詳細、`PersonalKnowledgeService`へのオプトイン統合方式、テスト構成を明記 |
-| Rev.1.5 | 2026-08-27 | 開発チーム | 実装反映: Mypy型アノテーション(42件)の補正・`google.genai`事前インポートテスト修正・Ruffフォーマットの反映 |
+| Rev.1.5 | 2026-08-27 | 開発チーム | 実装反映: Mypy型アノテーション(42件)の補正・`google.genai`事前インポートテスト修正・Ruffフォーマットの反映                                           |
+| Rev.1.6 | 2026-08-28 | 開発チーム | 実装整合: Gemini連携の既定有効化、`--no-gemini`による無効化、動的一単語判定、バッチ判定、およびAPI未設定・障害時の通過フォールバックを反映           |
+| Rev.1.7 | 2026-08-28 | 開発チーム | 設計追加: `ModelResolver` による動的モデル一覧取得、用途別候補選別、TTLキャッシュ、障害別フォールバック、実利用モデル記録を追加                      |
+| Rev.1.8 | 2026-08-28 | 開発チーム | 実装反映: `ModelResolver`、用途別候補選別、TTLキャッシュ、障害別フォールバック、CLIの実利用モデル出力、設定スキーマを追加                            |

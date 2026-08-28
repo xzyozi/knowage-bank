@@ -3,9 +3,11 @@
 from datetime import datetime, timezone
 import logging
 import math
+import time
 
 from personal_knowledge.config_loader import load_config
 from personal_knowledge.domain.models import SearchEntry, SearchSession
+from personal_knowledge.infrastructure.model_resolver import ModelResolutionError, ModelResolver
 
 logger = logging.getLogger(__name__)
 
@@ -38,48 +40,76 @@ class SemanticClusterer:
 
     def __init__(
         self,
-        embed_model: str = "models/text-embedding-004",
+        embed_model: str | None = None,
         similarity_threshold: float = 0.70,
         api_key: str | None = None,
+        model_resolver: ModelResolver | None = None,
     ) -> None:
-        """SemanticClusterer を初期化する。
-
-        Args:
-            embed_model: 使用する Embedding モデル名。None の場合は config.json から読み込む。
-            similarity_threshold: セッション統合を判定するコサイン類似度閾値。
-            api_key: Gemini API キー。None の場合は環境変数 GEMINI_API_KEY を使用。
-        """
+        """SemanticClusterer を初期化する。"""
         config = load_config()
         self.embed_model = embed_model or config.api.embed_model
         self.similarity_threshold = similarity_threshold
         self._api_key = api_key
+        self.model_resolver = model_resolver or ModelResolver(config=config.api, api_key=api_key)
 
     def _embed_text(self, text: str) -> list[float]:
-        """Gemini Embedding API を用いてテキストをベクトル化する。
-
-        API呼び出しに失敗した場合は、安全なデフォルトとしてゼロベクトルを返却する
-        (サイレントフォールト)。
-
-        Args:
-            text: ベクトル化対象のテキスト。
-
-        Returns:
-            list[float]: 埋め込みベクトル。失敗時は空リスト。
-        """
+        """Gemini Embedding APIを用途別に解決した候補で呼び出す。"""
         try:
-            from google import genai
+            candidate_models, source = self.model_resolver.resolve_candidates("embed_content")
+            self.model_resolver.start_resolution("embed_content", source)
+            client = self.model_resolver.get_client()
+            pending_models = list(candidate_models)
+            attempted_models: set[str] = set()
 
-            client = genai.Client(api_key=self._api_key) if self._api_key else genai.Client()
-            result = client.models.embed_content(model=self.embed_model, contents=text)
-            embeddings = getattr(result, "embeddings", None)
-            if embeddings:
-                values = getattr(embeddings[0], "values", None)
-                if values:
-                    return list(values)
-            return []
-        except Exception as e:
-            logger.warning(f"Gemini Embedding API call failed for text '{text[:50]}': {e}. Returning zero vector.")
-            return []
+            while pending_models:
+                model = pending_models.pop(0)
+                if model in attempted_models:
+                    continue
+                attempted_models.add(model)
+                request_model = model if model.startswith("models/") else f"models/{model}"
+
+                for retry_count in range(self.model_resolver.config.model_retry_count):
+                    try:
+                        result = client.models.embed_content(model=request_model, contents=text)
+                        embeddings = getattr(result, "embeddings", None)
+                        if embeddings and getattr(embeddings[0], "values", None):
+                            self.embed_model = request_model
+                            self.model_resolver.record_success("embed_content", request_model, source)
+                            return list(embeddings[0].values)
+                        return []
+                    except Exception as error:
+                        if self.model_resolver.raises_immediately(error):
+                            raise ModelResolutionError(
+                                f"Geminiモデル '{request_model}' の利用を継続できません: {error}"
+                            ) from error
+
+                        category = self.model_resolver.classify_error(error)
+                        self.model_resolver.record_fallback("embed_content", request_model, error)
+                        if category == "not_found":
+                            self.model_resolver.invalidate("embed_content")
+                            refreshed_models, source = self.model_resolver.resolve_candidates(
+                                "embed_content", force_refresh=True, exclude=attempted_models
+                            )
+                            pending_models.extend(
+                                candidate for candidate in refreshed_models if candidate not in pending_models
+                            )
+                            break
+                        if (
+                            category in {"rate_limited", "transient"}
+                            and retry_count + 1 < self.model_resolver.config.model_retry_count
+                        ):
+                            time.sleep(self.model_resolver.retry_delay_seconds(retry_count))
+                            continue
+                        logger.warning("Gemini Embedding API call failed for model '%s': %s", request_model, error)
+                        break
+        except ModelResolutionError:
+            raise
+        except Exception as error:
+            logger.warning(
+                "Gemini Embedding API call failed for text '%s': %s. Returning zero vector.", text[:50], error
+            )
+
+        return []
 
     @staticmethod
     def _ensure_utc(dt: datetime) -> datetime:

@@ -1,18 +1,20 @@
+from typing import Any
 import pytest
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--run-integration", action="store_true", default=False, help="run integration tests"
-    )
+
+def pytest_addoption(parser: Any) -> None:
+    parser.addoption("--run-integration", action="store_true", default=False, help="run integration tests")
     parser.addoption(
         "--run-ollama", "--ollama", action="store_true", default=False, help="run tests requiring live Ollama server"
     )
 
-def pytest_configure(config):
+
+def pytest_configure(config: Any) -> None:
     config.addinivalue_line("markers", "integration: mark test as an integration test")
     config.addinivalue_line("markers", "ollama: mark test as requiring a running Ollama server")
 
-def pytest_collection_modifyitems(config, items):
+
+def pytest_collection_modifyitems(config: Any, items: Any) -> None:
     run_integration = config.getoption("--run-integration")
     run_ollama = config.getoption("--run-ollama")
 

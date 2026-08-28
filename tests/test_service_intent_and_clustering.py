@@ -32,8 +32,8 @@ class _MockDAO(BrowserHistoryDAO):
         return self._entries
 
 
-def test_intent_filter_none_uses_rule_based_only_by_default() -> None:
-    """intent_filter/semantic_clusterer 未指定時は既存のルールベース動作のみで処理されること。"""
+def test_intent_filter_is_enabled_by_default() -> None:
+    """intent_filter 未指定時は既定で有効となり、ルールベースのセッション解析を併用すること。"""
     entries = [
         SearchEntry(
             timestamp=datetime(2026, 8, 23, 10, 0, 0, tzinfo=timezone.utc),
@@ -46,17 +46,23 @@ def test_intent_filter_none_uses_rule_based_only_by_default() -> None:
             source_browser="chrome",
         ),
     ]
+    mock_filter = MagicMock(spec=IntentFilter)
+    mock_filter.filter_knowledge_queries_batch.return_value = [True, True]
     service = PersonalKnowledgeService(
         daos=[_MockDAO(entries)],
         issue_client=LocalFileIssueClient(storage_path=""),
+        intent_filter=mock_filter,
     )
 
-    assert service.intent_filter is None
+    assert isinstance(service.intent_filter, IntentFilter)
     assert service.semantic_clusterer is None
 
     deduped, sessions = service.process_entries_to_sessions(entries)
     assert len(deduped) == 2
     assert len(sessions) == 1
+    mock_filter.filter_knowledge_queries_batch.assert_called_once_with(
+        [entry.keyword for entry in entries], batch_size=25
+    )
 
 
 def test_intent_filter_excludes_non_knowledge_queries() -> None:
@@ -80,7 +86,7 @@ def test_intent_filter_excludes_non_knowledge_queries() -> None:
     ]
 
     mock_filter = MagicMock(spec=IntentFilter)
-    mock_filter.is_knowledge_query.side_effect = lambda kw: "天気" not in kw
+    mock_filter.filter_knowledge_queries_batch.return_value = [True, False, True]
 
     service = PersonalKnowledgeService(
         daos=[_MockDAO(entries)],
@@ -92,6 +98,9 @@ def test_intent_filter_excludes_non_knowledge_queries() -> None:
 
     assert len(sessions) == 1
     assert sessions[0].queries == ["Python asyncio タスクキャンセル", "asyncio CancelledError ハンドリング"]
+    mock_filter.filter_knowledge_queries_batch.assert_called_once_with(
+        [entry.keyword for entry in entries], batch_size=25
+    )
 
 
 def test_semantic_clusterer_is_used_when_provided() -> None:
