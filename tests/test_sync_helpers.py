@@ -117,7 +117,13 @@ async def test_process_single_issue_success_markdown_json(
 
     assert res is True
     mock_manager.update_issue_status.assert_any_call(99, "processing")
-    mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
+    mock_manager.update_issue_status.assert_any_call(
+        99,
+        "processed",
+        article_file="issue-99-test-issue-title.html",
+        article_source_file="issue-99.md",
+        index_synced=True,
+    )
     mock_builder.save_article.assert_called_once()
     mock_sync.main.assert_called_once()
 
@@ -137,7 +143,7 @@ async def test_process_single_issue_success_raw_json(
     mock_session: Any,
     mock_sse: Any,
 ) -> None:
-    """MA-PR-02: LLMが直接生JSONを返す正常系"""
+    """MA-PR-02: LLMが直接Markdownを返す正常系"""
     setup_mcp_mock(mock_sse, mock_session)
     mock_git_commit.return_value = True
     mock_manager = MagicMock()
@@ -145,10 +151,10 @@ async def test_process_single_issue_success_raw_json(
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
 
-    # LLM応答: 1回目はクエリ、2回目は生JSON
+    # LLM応答: 1回目はクエリ、2回目はMarkdown
     mock_query_res = MagicMock(content="Test Query")
-    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_article_res = MagicMock(content=mock_json_str)
+    mock_markdown_str = "# Test Title\n\n## 要点\n- test point"
+    mock_article_res = MagicMock(content=mock_markdown_str)
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
     mock_builder = MagicMock()
@@ -159,7 +165,13 @@ async def test_process_single_issue_success_raw_json(
     res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=True)
 
     assert res is True
-    mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
+    mock_manager.update_issue_status.assert_any_call(
+        99,
+        "processed",
+        article_file="issue-99-test-issue-title.html",
+        article_source_file="issue-99.md",
+        index_synced=True,
+    )
 
 
 @patch("sync_github_issues.sse_client")
@@ -190,18 +202,20 @@ async def test_process_single_issue_empty_llm_response(mock_model_class: Any, mo
 @patch("sync_github_issues.sse_client")
 @patch("sync_github_issues.ClientSession")
 @patch("sync_github_issues.ChatModel")
+@patch("sync_github_issues.save_article_source", side_effect=OSError("Disk full"))
 @pytest.mark.asyncio
-async def test_process_single_issue_invalid_json(mock_model_class: Any, mock_session: Any, mock_sse: Any) -> None:
-    """MA-PR-04: LLMが不正なJSONを返した場合に失敗(failed)ステータスになる異常系"""
+async def test_process_single_issue_save_source_error(
+    mock_save_source: Any, mock_model_class: Any, mock_session: Any, mock_sse: Any
+) -> None:
+    """MA-PR-04: 原本保存中に例外が発生した場合に失敗(failed)ステータスになる異常系"""
     setup_mcp_mock(mock_sse, mock_session)
     mock_manager = MagicMock()
 
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
 
-    # 2回目の生成結果が不正JSON
     mock_query_res = MagicMock(content="Test Query")
-    mock_article_res = MagicMock(content="{this is not a valid json}")
+    mock_article_res = MagicMock(content="# Valid Markdown")
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
@@ -249,7 +263,13 @@ async def test_process_single_issue_no_push(
     assert res is True
     # git_commit が呼び出されていないこと
     mock_git_commit.assert_not_called()
-    mock_manager.update_issue_status.assert_any_call(99, "processed", article_file="issue-99-test-issue-title.html")
+    mock_manager.update_issue_status.assert_any_call(
+        99,
+        "processed",
+        article_file="issue-99-test-issue-title.html",
+        article_source_file="issue-99.md",
+        index_synced=True,
+    )
 
 
 @patch("sync_github_issues.sse_client")
