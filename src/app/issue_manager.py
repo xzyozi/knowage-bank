@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import httpx
 
 from app import config
+from app.utils.atomic_file import atomic_write_json
 from app.utils.logger import logger
 
 load_dotenv()
@@ -47,8 +48,7 @@ class IssueManager:
 
     def _save_db(self, data: dict) -> None:
         try:
-            with open(self.db_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            atomic_write_json(self.db_path, data, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save issue database: {e}")
 

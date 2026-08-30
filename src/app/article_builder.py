@@ -5,6 +5,7 @@ from typing import Any
 
 from jinja2 import Template
 
+from app.utils.atomic_file import atomic_write_text
 from app.utils.citation_processor import apply_citations
 from app.utils.logger import logger
 from app.utils.markdown_cleaner import parse_reference_footer
@@ -117,11 +118,9 @@ class ArticleBuilder:
         html_str = self.build_article_html(data)
 
         articles_dir = os.path.join("public", "articles")
-        os.makedirs(articles_dir, exist_ok=True)
-
         output_path = os.path.join(articles_dir, filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_str)
+
+        atomic_write_text(output_path, html_str)
 
         logger.info(f"Article saved and built successfully: {output_path}")
         return output_path
