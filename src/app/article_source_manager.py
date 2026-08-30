@@ -14,9 +14,7 @@ from app.utils.logger import logger
 
 def get_default_source_dir() -> str:
     """Markdown原本のデフォルト格納ディレクトリパスを取得する。"""
-    return os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "data", "article_sources")
-    )
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "article_sources"))
 
 
 def save_article_source(
