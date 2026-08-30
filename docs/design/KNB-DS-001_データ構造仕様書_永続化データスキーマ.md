@@ -89,6 +89,11 @@ erDiagram
 | `issues.<id>.status` | 文字列 (Enum) | 必須 | `"unprocessed"` | 処理状態 (`unprocessed`, `processing`, `processed`, `failed`) |
 | `issues.<id>.processed_at` | 文字列 (ISO8601) | 任意 | `null` | 記事生成が完了した日時 |
 | `issues.<id>.article_file` | 文字列 | 任意 | `null` | 生成された記事 HTML のスラッグファイル名 (例: `issue-12-test.html`) |
+| `issues.<id>.article_source_file` | 文字列 | 任意 | `null` | 保存された Markdown 原本ファイル名 (例: `issue-12.md`) |
+| `issues.<id>.index_synced` | 真偽値 (bool) | 必須 | `false` | インデックス (`docs/index.html`) への同期完了状態 |
+| `issues.<id>.attempt_id` | 文字列 (UUID) | 任意 | `null` | 処理試行ごとの一意な識別子 |
+| `issues.<id>.failed_at` | 文字列 (ISO8601) | 任意 | `null` | 処理が失敗した日時 |
+| `issues.<id>.failure_reason` | 文字列 | 任意 | `null` | 失敗の例外種別・処理段階・要約メッセージ |
 
 ### 2.3 カテゴリ・クラスタ定義スキーマ (`config/category_config.json`)
 

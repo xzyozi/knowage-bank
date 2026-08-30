@@ -95,16 +95,26 @@ GitHub上のIssueを書き換えないため、処理状況はローカルのJSO
       "state": "open",
       "status": "processed",
       "processed_at": "2026-06-15T21:42:00Z",
-      "article_file": "mcp-transport-security.html"
+      "article_file": "mcp-transport-security.html",
+      "article_source_file": "issue-12.md",
+      "index_synced": true,
+      "attempt_id": "c9a2f1b0-8f12-4211-8901-123456789abc",
+      "failed_at": null,
+      "failure_reason": null
     },
     "13": {
       "number": 13,
       "title": "KIROのAgent Hooks設定について",
       "body": "本文...",
       "state": "open",
-      "status": "unprocessed",
+      "status": "failed",
       "processed_at": null,
-      "article_file": null
+      "article_file": null,
+      "article_source_file": null,
+      "index_synced": false,
+      "attempt_id": "a1b2c3d4-0000-1111-2222-333344445555",
+      "failed_at": "2026-06-15T21:45:00Z",
+      "failure_reason": "[Stage 3] ValidationFailed: Forbidden HTML tag <script> detected"
     }
   }
 }

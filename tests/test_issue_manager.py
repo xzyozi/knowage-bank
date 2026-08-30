@@ -85,12 +85,38 @@ def test_update_issue_status(temp_db_path: Any) -> None:
     manager._save_db(test_data)
 
     # 正常系：processedに更新 (IM-DB-05)
-    manager.update_issue_status(10, "processed", article_file="issue-10.html")
+    manager.update_issue_status(
+        10,
+        "processed",
+        article_file="issue-10.html",
+        article_source_file="issue-10.md",
+        index_synced=True,
+        attempt_id="test-attempt-uuid",
+    )
     db_data = manager._load_db()
     issue = db_data["issues"]["10"]
     assert issue["status"] == "processed"
     assert issue["processed_at"] is not None
     assert issue["article_file"] == "issue-10.html"
+    assert issue["article_source_file"] == "issue-10.md"
+    assert issue["index_synced"] is True
+    assert issue["attempt_id"] == "test-attempt-uuid"
+    assert issue["failed_at"] is None
+    assert issue["failure_reason"] is None
+
+    # 正常系：failedに更新と失敗理由の記録
+    manager.update_issue_status(
+        10,
+        "failed",
+        failure_reason="[Stage 3] ValidationFailed: Forbidden HTML tag",
+        attempt_id="test-attempt-uuid-2",
+    )
+    db_data_failed = manager._load_db()
+    issue_failed = db_data_failed["issues"]["10"]
+    assert issue_failed["status"] == "failed"
+    assert issue_failed["failed_at"] is not None
+    assert issue_failed["failure_reason"] == "[Stage 3] ValidationFailed: Forbidden HTML tag"
+    assert issue_failed["attempt_id"] == "test-attempt-uuid-2"
 
     # 異常系：存在しないIssueを指定 (IM-DB-06)
     manager.update_issue_status(999, "processed")
