@@ -32,6 +32,10 @@ DANGEROUS_HTML_PATTERN = re.compile(
 )
 
 
+# 許可される内部アンカーおよび相対パスプレフィックス
+ALLOWED_RELATIVE_PREFIXES = ("#", "/", "./", "../")
+
+
 def validate_url(url: str) -> bool:
     """URL が安全な HTTPS 絶対 URL かどうかを検証する。"""
     if not url:
@@ -76,8 +80,8 @@ def validate_markdown(markdown_text: str) -> ValidationResult:
     link_matches = re.findall(r"\[([^\]]+)\]\(([^\)]+)\)", markdown_text)
     for title, url in link_matches:
         url_clean = url.strip()
-        # 内部アンカー (#...) および相対パス (/... または ./...) は許可
-        if url_clean.startswith("#") or url_clean.startswith("/") or url_clean.startswith("./"):
+        # 内部アンカー (#...) および相対パス (/, ./, ../) は許可
+        if url_clean.startswith(ALLOWED_RELATIVE_PREFIXES):
             continue
         if not validate_url(url_clean):
             result.add_error(f"Invalid or non-HTTPS URL in link '{title}': '{url_clean}'")
@@ -110,8 +114,8 @@ def validate_html(html_text: str) -> ValidationResult:
     href_matches = re.findall(r'href=["\']([^"\']+)["\']', html_text, re.IGNORECASE)
     for href in href_matches:
         href_clean = href.strip()
-        # 内部アンカー (#...) は許可
-        if href_clean.startswith("#"):
+        # 内部アンカー (#...) および相対パス (/, ./, ../) は許可
+        if href_clean.startswith(ALLOWED_RELATIVE_PREFIXES):
             continue
         if not validate_url(href_clean):
             result.add_error(f"Non-HTTPS or invalid URL found in href attribute: '{href_clean}'")

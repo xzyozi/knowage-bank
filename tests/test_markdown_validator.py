@@ -60,12 +60,13 @@ def test_validate_markdown_non_https_link() -> None:
 
 
 def test_validate_markdown_anchor_and_relative_links() -> None:
-    """アンカーリンク (#) や相対パスリンク (/ または ./) が許可されるテスト"""
+    """アンカーリンク (#) や相対パスリンク (/, ./, ../) が許可されるテスト"""
     relative_md = (
         "---\ntitle: テスト\neyebrow: Tech\nlead: lead\n---\n\n"
         "## セクション\n- [内部アンカー](#section-1)\n"
         "- [ルート相対](/articles/issue-1.html)\n"
-        "- [相対パス](./issue-2.html)"
+        "- [相対パス](./issue-2.html)\n"
+        "- [親ディレクトリ相対](../articles/issue-3.html)"
     )
     result = validate_markdown(relative_md)
     assert result.is_valid is True
@@ -77,7 +78,8 @@ def test_validate_html_valid() -> None:
     valid_html = (
         "<!DOCTYPE html>\n<html lang=\"ja\">\n<head><title>テスト</title></head>\n"
         "<body><main><article><h1>タイトル</h1>"
-        "<a href=\"https://example.com\">リンク</a></article></main></body></html>"
+        "<a href=\"https://example.com\">リンク</a>"
+        "<a href=\"../articles/issue-1.html\">相対リンク</a></article></main></body></html>"
     )
     result = validate_html(valid_html)
     assert result.is_valid is True
@@ -90,4 +92,6 @@ def test_validate_html_invalid_structure() -> None:
     assert result.is_valid is False
     assert any("Missing DOCTYPE" in e for e in result.errors)
     assert any("Missing lang='ja'" in e for e in result.errors)
+    assert any("Missing <title>" in e for e in result.errors)
+    assert any("Missing <article> or <main>" in e for e in result.errors)
     assert any("Non-HTTPS" in e for e in result.errors)
