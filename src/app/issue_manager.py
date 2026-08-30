@@ -144,6 +144,11 @@ class IssueManager:
                     "status": "unprocessed",
                     "processed_at": None,
                     "article_file": None,
+                    "article_source_file": None,
+                    "index_synced": False,
+                    "attempt_id": None,
+                    "failed_at": None,
+                    "failure_reason": None,
                 }
                 logger.info(f"Registered new local issue #{issue_num}: {title}")
 
@@ -166,18 +171,42 @@ class IssueManager:
         unprocessed_list.sort(key=lambda x: x.get("number"))
         return unprocessed_list[0]
 
-    def update_issue_status(self, issue_number: int, status: str, article_file: Optional[str] = None) -> None:
-        """特定のIssueの処理ステータスを更新する"""
+    def update_issue_status(
+        self,
+        issue_number: int,
+        status: str,
+        article_file: Optional[str] = None,
+        article_source_file: Optional[str] = None,
+        index_synced: Optional[bool] = None,
+        attempt_id: Optional[str] = None,
+        failure_reason: Optional[str] = None,
+    ) -> None:
+        """特定のIssueの処理ステータスおよび成果物・失敗情報を更新する。"""
         db_data = self._load_db()
         issues = db_data.get("issues", {})
         issue_key = str(issue_number)
 
         if issue_key in issues:
-            issues[issue_key]["status"] = status
+            record = issues[issue_key]
+            record["status"] = status
+
+            if attempt_id is not None:
+                record["attempt_id"] = attempt_id
+            if article_source_file is not None:
+                record["article_source_file"] = article_source_file
+            if index_synced is not None:
+                record["index_synced"] = index_synced
+
             if status == "processed":
-                issues[issue_key]["processed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record["processed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record["index_synced"] = True if index_synced is None else index_synced
                 if article_file:
-                    issues[issue_key]["article_file"] = article_file
+                    record["article_file"] = article_file
+                record["failed_at"] = None
+                record["failure_reason"] = None
+            elif status == "failed":
+                record["failed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                record["failure_reason"] = failure_reason
 
             db_data["issues"] = issues
             self._save_db(db_data)
