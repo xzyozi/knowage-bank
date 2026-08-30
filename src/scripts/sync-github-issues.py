@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 
 # src/ を module 検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -17,6 +18,7 @@ from app.article_source_manager import save_article_source
 from app.chatmodel import ChatModel
 from app.issue_manager import IssueManager
 from app.utils.logger import logger
+from app.utils.markdown_validator import validate_html, validate_markdown
 
 # 動的インポートでハイフン付きスクリプトを読み込む
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -143,8 +145,9 @@ async def process_single_issue(
     title = issue["title"]
     body = issue.get("body", "")
 
-    logger.info(f"🚀 Starting generation for Issue #{issue_num}: {title}")
-    manager.update_issue_status(issue_num, "processing")
+    attempt_id = str(uuid.uuid4())
+    logger.info(f"🚀 Starting generation for Issue #{issue_num}: {title} (attempt: {attempt_id})")
+    manager.update_issue_status(issue_num, "processing", attempt_id=attempt_id)
 
     try:
         model = ChatModel()
@@ -268,6 +271,14 @@ async def process_single_issue(
         elif markdown_text.startswith("```md") and markdown_text.endswith("```"):
             markdown_text = markdown_text[5:-3].strip()
 
+        # 3.5. 保存前検証 (Stage 3 / OUT-05, OUT-06)
+        val_md = validate_markdown(markdown_text)
+        if not val_md.is_valid:
+            err_msg = f"[Stage 3] Markdown ValidationFailed: {'; '.join(val_md.errors)}"
+            logger.error(f"❌ Markdown validation failed for Issue #{issue_num}: {err_msg}")
+            manager.update_issue_status(issue_num, "failed", attempt_id=attempt_id, failure_reason=err_msg)
+            return False
+
         # 4. Markdown 原本を data/article_sources/issue-<番号>.md に原子的書込みで保存 (OUT-03)
         source_filename = f"issue-{issue_num}.md"
         logger.info(f"Saving Markdown article source: {source_filename}...")
@@ -278,7 +289,17 @@ async def process_single_issue(
         filename = sanitize_filename(title, issue_num)
 
         logger.info(f"Building HTML from Markdown and saving to {filename}...")
-        builder.save_article({"markdown_text": markdown_text}, filename)
+        html_path = builder.save_article({"markdown_text": markdown_text}, filename)
+
+        # 5.5. 保存後検証 (Stage 5 / OUT-05, OUT-06)
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_text = f.read()
+        val_html = validate_html(html_text)
+        if not val_html.is_valid:
+            err_msg = f"[Stage 5] HTML ValidationFailed: {'; '.join(val_html.errors)}"
+            logger.error(f"❌ HTML validation failed for Issue #{issue_num}: {err_msg}")
+            manager.update_issue_status(issue_num, "failed", attempt_id=attempt_id, failure_reason=err_msg)
+            return False
 
         # インデックスの同期
         logger.info("Running sync-article-dates to update index.html...")
@@ -299,13 +320,15 @@ async def process_single_issue(
             article_file=filename,
             article_source_file=source_filename,
             index_synced=True,
+            attempt_id=attempt_id,
         )
         logger.info(f"✅ Successfully processed Issue #{issue_num}!")
         return True
 
-    except Exception:
+    except Exception as e:
         logger.exception(f"❌ Failed to process Issue #{issue_num}:")
-        manager.update_issue_status(issue_num, "failed")
+        err_msg = f"[{type(e).__name__}] {str(e)}"
+        manager.update_issue_status(issue_num, "failed", attempt_id=attempt_id, failure_reason=err_msg)
         return False
 
 

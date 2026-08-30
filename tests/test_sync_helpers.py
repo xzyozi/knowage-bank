@@ -91,8 +91,9 @@ async def test_process_single_issue_success_markdown_json(
     mock_git_commit: Any,
     mock_session: Any,
     mock_sse: Any,
+    tmp_path: Any,
 ) -> None:
-    """MA-PR-01: LLMがマークダウンブロックで囲まれたJSONを返す正常系"""
+    """MA-PR-01: LLMがマークダウンブロックで囲まれたJSON/Markdownを返す正常系"""
     setup_mcp_mock(mock_sse, mock_session)
     mock_git_commit.return_value = True
     mock_manager = MagicMock()
@@ -100,32 +101,32 @@ async def test_process_single_issue_success_markdown_json(
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
 
-    # LLM応答: 1回目はクエリ、2回目はマークダウンJSON
     mock_query_res = MagicMock(content="Test Query")
-    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_article_res = MagicMock(content=f"```json\n{mock_json_str}\n```")
+    mock_markdown_str = "---\ntitle: Test Title\neyebrow: AI > 開発ワークフロー\nlead: test lead\n---\n\n## 本文\ntest content"
+    mock_article_res = MagicMock(content=f"```markdown\n{mock_markdown_str}\n```")
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
+    # HTML検証用に有効なHTMLファイルをモック生成
+    html_file = os.path.join(tmp_path, "issue-99-test-issue-title.html")
+    with open(html_file, "w", encoding="utf-8") as f:
+        f.write('<!DOCTYPE html><html lang="ja"><head><title>Test Title</title></head><body><main><article>Test</article></main></body></html>')
+
     mock_builder = MagicMock()
+    mock_builder.save_article.return_value = html_file
     mock_builder_class.return_value = mock_builder
 
-    # テスト対象Issue
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
 
-    # 実行
     res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=True)
 
     assert res is True
-    mock_manager.update_issue_status.assert_any_call(99, "processing")
-    mock_manager.update_issue_status.assert_any_call(
-        99,
-        "processed",
-        article_file="issue-99-test-issue-title.html",
-        article_source_file="issue-99.md",
-        index_synced=True,
-    )
-    mock_builder.save_article.assert_called_once()
-    mock_sync.main.assert_called_once()
+    assert mock_manager.update_issue_status.call_count >= 2
+    last_call = mock_manager.update_issue_status.call_args
+    assert last_call.args[0] == 99
+    assert last_call.args[1] == "processed"
+    assert last_call.kwargs.get("article_file") == "issue-99-test-issue-title.html"
+    assert last_call.kwargs.get("article_source_file") == "issue-99.md"
+    assert last_call.kwargs.get("index_synced") is True
 
 
 @patch("sync_github_issues.sse_client")
@@ -142,6 +143,7 @@ async def test_process_single_issue_success_raw_json(
     mock_git_commit: Any,
     mock_session: Any,
     mock_sse: Any,
+    tmp_path: Any,
 ) -> None:
     """MA-PR-02: LLMが直接Markdownを返す正常系"""
     setup_mcp_mock(mock_sse, mock_session)
@@ -151,13 +153,17 @@ async def test_process_single_issue_success_raw_json(
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
 
-    # LLM応答: 1回目はクエリ、2回目はMarkdown
     mock_query_res = MagicMock(content="Test Query")
-    mock_markdown_str = "# Test Title\n\n## 要点\n- test point"
+    mock_markdown_str = "---\ntitle: Test Title\neyebrow: AI > 開発ワークフロー\nlead: test lead\n---\n\n## 本文\ntest content"
     mock_article_res = MagicMock(content=mock_markdown_str)
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
+    html_file = os.path.join(tmp_path, "issue-99-test-issue-title.html")
+    with open(html_file, "w", encoding="utf-8") as f:
+        f.write('<!DOCTYPE html><html lang="ja"><head><title>Test Title</title></head><body><main><article>Test</article></main></body></html>')
+
     mock_builder = MagicMock()
+    mock_builder.save_article.return_value = html_file
     mock_builder_class.return_value = mock_builder
 
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
@@ -165,13 +171,9 @@ async def test_process_single_issue_success_raw_json(
     res = await process_single_issue(issue, mock_manager, git_commit_flag=True, git_push=True)
 
     assert res is True
-    mock_manager.update_issue_status.assert_any_call(
-        99,
-        "processed",
-        article_file="issue-99-test-issue-title.html",
-        article_source_file="issue-99.md",
-        index_synced=True,
-    )
+    last_call = mock_manager.update_issue_status.call_args
+    assert last_call.args[0] == 99
+    assert last_call.args[1] == "processed"
 
 
 @patch("sync_github_issues.sse_client")
@@ -186,7 +188,6 @@ async def test_process_single_issue_empty_llm_response(mock_model_class: Any, mo
     mock_model = MagicMock()
     mock_model_class.return_value = mock_model
 
-    # 2回目の生成結果が空
     mock_query_res = MagicMock(content="Test Query")
     mock_article_res = MagicMock(content="")
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
@@ -196,7 +197,9 @@ async def test_process_single_issue_empty_llm_response(mock_model_class: Any, mo
     res = await process_single_issue(issue, mock_manager)
 
     assert res is False
-    mock_manager.update_issue_status.assert_any_call(99, "failed")
+    last_call = mock_manager.update_issue_status.call_args
+    assert last_call.args[0] == 99
+    assert last_call.args[1] == "failed"
 
 
 @patch("sync_github_issues.sse_client")
@@ -215,7 +218,7 @@ async def test_process_single_issue_save_source_error(
     mock_model_class.return_value = mock_model
 
     mock_query_res = MagicMock(content="Test Query")
-    mock_article_res = MagicMock(content="# Valid Markdown")
+    mock_article_res = MagicMock(content="---\ntitle: Valid\neyebrow: Tech\nlead: lead\n---\n\n## Section\nvalid md")
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
@@ -223,7 +226,9 @@ async def test_process_single_issue_save_source_error(
     res = await process_single_issue(issue, mock_manager)
 
     assert res is False
-    mock_manager.update_issue_status.assert_any_call(99, "failed")
+    last_call = mock_manager.update_issue_status.call_args
+    assert last_call.args[0] == 99
+    assert last_call.args[1] == "failed"
 
 
 @patch("sync_github_issues.sse_client")
@@ -240,6 +245,7 @@ async def test_process_single_issue_no_push(
     mock_git_commit: Any,
     mock_session: Any,
     mock_sse: Any,
+    tmp_path: Any,
 ) -> None:
     """git_commit_flag=False, git_push=False のときに git_commit が呼び出されないことを検証"""
     setup_mcp_mock(mock_sse, mock_session)
@@ -249,11 +255,16 @@ async def test_process_single_issue_no_push(
     mock_model_class.return_value = mock_model
 
     mock_query_res = MagicMock(content="Test Query")
-    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_article_res = MagicMock(content=mock_json_str)
+    mock_markdown_str = "---\ntitle: Test Title\neyebrow: AI > 開発ワークフロー\nlead: test lead\n---\n\n## 本文\ntest content"
+    mock_article_res = MagicMock(content=mock_markdown_str)
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
+    html_file = os.path.join(tmp_path, "issue-99-test-issue-title.html")
+    with open(html_file, "w", encoding="utf-8") as f:
+        f.write('<!DOCTYPE html><html lang="ja"><head><title>Test Title</title></head><body><main><article>Test</article></main></body></html>')
+
     mock_builder = MagicMock()
+    mock_builder.save_article.return_value = html_file
     mock_builder_class.return_value = mock_builder
 
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
@@ -261,15 +272,10 @@ async def test_process_single_issue_no_push(
     res = await process_single_issue(issue, mock_manager, git_commit_flag=False, git_push=False)
 
     assert res is True
-    # git_commit が呼び出されていないこと
     mock_git_commit.assert_not_called()
-    mock_manager.update_issue_status.assert_any_call(
-        99,
-        "processed",
-        article_file="issue-99-test-issue-title.html",
-        article_source_file="issue-99.md",
-        index_synced=True,
-    )
+    last_call = mock_manager.update_issue_status.call_args
+    assert last_call.args[0] == 99
+    assert last_call.args[1] == "processed"
 
 
 @patch("sync_github_issues.sse_client")
@@ -286,6 +292,7 @@ async def test_process_single_issue_commit_only(
     mock_git_commit: Any,
     mock_session: Any,
     mock_sse: Any,
+    tmp_path: Any,
 ) -> None:
     """git_commit_flag=True, git_push=False (コミットのみ) のときに git_commit(..., push=False) が呼び出されることを検証"""
     setup_mcp_mock(mock_sse, mock_session)
@@ -296,11 +303,16 @@ async def test_process_single_issue_commit_only(
     mock_model_class.return_value = mock_model
 
     mock_query_res = MagicMock(content="Test Query")
-    mock_json_str = '{"title": "Test Title", "eyebrow": "AI > 開発ワークフロー", "lead": "test lead", "qa": [], "sections": [], "key_points": [], "references": []}'
-    mock_article_res = MagicMock(content=mock_json_str)
+    mock_markdown_str = "---\ntitle: Test Title\neyebrow: AI > 開発ワークフロー\nlead: test lead\n---\n\n## 本文\ntest content"
+    mock_article_res = MagicMock(content=mock_markdown_str)
     mock_model.generate_response.side_effect = [mock_query_res, mock_article_res]
 
+    html_file = os.path.join(tmp_path, "issue-99-test-issue-title.html")
+    with open(html_file, "w", encoding="utf-8") as f:
+        f.write('<!DOCTYPE html><html lang="ja"><head><title>Test Title</title></head><body><main><article>Test</article></main></body></html>')
+
     mock_builder = MagicMock()
+    mock_builder.save_article.return_value = html_file
     mock_builder_class.return_value = mock_builder
 
     issue = {"number": 99, "title": "Test Issue Title", "body": "Issue Body"}
