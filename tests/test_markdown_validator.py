@@ -59,6 +59,19 @@ def test_validate_markdown_non_https_link() -> None:
     assert any("non-https" in e.lower() for e in result.errors)
 
 
+def test_validate_markdown_anchor_and_relative_links() -> None:
+    """アンカーリンク (#) や相対パスリンク (/ または ./) が許可されるテスト"""
+    relative_md = (
+        "---\ntitle: テスト\neyebrow: Tech\nlead: lead\n---\n\n"
+        "## セクション\n- [内部アンカー](#section-1)\n"
+        "- [ルート相対](/articles/issue-1.html)\n"
+        "- [相対パス](./issue-2.html)"
+    )
+    result = validate_markdown(relative_md)
+    assert result.is_valid is True
+    assert len(result.errors) == 0
+
+
 def test_validate_html_valid() -> None:
     """正常な HTML 構造の検証テスト"""
     valid_html = (

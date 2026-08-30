@@ -76,6 +76,9 @@ def validate_markdown(markdown_text: str) -> ValidationResult:
     link_matches = re.findall(r"\[([^\]]+)\]\(([^\)]+)\)", markdown_text)
     for title, url in link_matches:
         url_clean = url.strip()
+        # 内部アンカー (#...) および相対パス (/... または ./...) は許可
+        if url_clean.startswith("#") or url_clean.startswith("/") or url_clean.startswith("./"):
+            continue
         if not validate_url(url_clean):
             result.add_error(f"Invalid or non-HTTPS URL in link '{title}': '{url_clean}'")
 
@@ -91,7 +94,7 @@ def validate_html(html_text: str) -> ValidationResult:
         return result
 
     # 1. 必須構造のチェック
-    if "<!DOCTYPE html>" not in html_text and "<!doctype html>" not in html_text.lower():
+    if "<!doctype html>" not in html_text.lower():
         result.add_error("Missing DOCTYPE declaration.")
 
     if 'lang="ja"' not in html_text and "lang='ja'" not in html_text:

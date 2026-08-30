@@ -291,6 +291,9 @@ async def process_single_issue(
         logger.info(f"Building HTML from Markdown and saving to {filename}...")
         html_path = builder.save_article({"markdown_text": markdown_text}, filename)
 
+        if not html_path or not os.path.exists(html_path):
+            raise ValueError(f"save_article failed or returned invalid path for Issue #{issue_num}: {html_path}")
+
         # 5.5. 保存後検証 (Stage 5 / OUT-05, OUT-06)
         with open(html_path, "r", encoding="utf-8") as f:
             html_text = f.read()
