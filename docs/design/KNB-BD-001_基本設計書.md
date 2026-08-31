@@ -1,9 +1,9 @@
 ---
 title: "基本設計書（システム全体アーキテクチャ定義）"
 document_type: "basic_design"
-version: "1.2"
+version: "1.4"
 created_at: "2026-06-14"
-updated_at: "2026-08-15"
+updated_at: "2026-08-31"
 author: "開発チーム"
 purpose: "「技術質問ノート」サイト全体のシステム構成、データフロー、コンポーネント間の依存関係を明記し、開発・改修時の設計ブレを防ぐため"
 related_documents:
@@ -20,14 +20,14 @@ related_documents:
 # 基本設計書（システム全体アーキテクチャ定義）
 **「技術質問ノート」サイト全体システムアーキテクチャ**
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 文書番号 | KNB-BD-001 |
+| 項目           | 内容                                         |
+| :------------- | :------------------------------------------- |
+| 文書番号       | KNB-BD-001                                   |
 | ドキュメント名 | 基本設計書（システム全体アーキテクチャ定義） |
-| 版数 | Rev.1.3 |
-| 改訂日 | 2026-08-27 |
-| 作成日 | 2026-06-14 |
-| 作成者 | 開発チーム |
+| 版数           | Rev.1.3                                      |
+| 改訂日         | 2026-08-27                                   |
+| 作成日         | 2026-06-14                                   |
+| 作成者         | 開発チーム                                   |
 
 ---
 
@@ -113,31 +113,14 @@ related_documents:
 
 ```mermaid
 flowchart TD
-    User["ユーザー"] -->|質問テーマ指定| GenScript["src/scripts/generate-article.py"]
-    GenScript --> LocalLLM["LocalLLM (Ollama Model)"]
-    
-    LocalLLM -->|JSONで記事データ出力（従来方式）| Builder["src/app/article_builder.py"]
-    
-    IssueSync["src/scripts/sync-github-issues.py"] -->|Issue取得| MCP["Deep Research MCP"]
-    MCP -->|Markdown リサーチ結果| Stage05["Stage 0.5: クレンジング & 参考文献分離\n(markdown_cleaner.py)"]
-    Stage05 -->|clean_body_md + raw_refs| LLMMeta["Stage 2: LLM メタデータ選定\n(eyebrow, tags, qa, citations_keep)"]
-    LLMMeta --> Stage3["Stage 3: Markdown→HTML変換 & 引用リナンバリング\n(markdown_parser.py + citation_processor.py)"]
-    Stage3 --> Builder
-    
-    Builder -->|Jinja2レンダリング & カテゴリ補正| GenHTML["public/articles/<slug>.html を生成・保存"]
-    Builder -->|生応答記録| LLMLog["logs/llm_output.log"]
-    
-    GenHTML --> SyncScript["src/scripts/sync-article-dates.py 自動実行"]
-    
-    SyncScript --> UpdateTime["各記事の <time> を更新 (git初回コミット日)"]
-    SyncScript --> GenIndex["public/index.html を再生成 (新着6件 + カテゴリ別)"]
-    
-    UpdateTime --> GitCommit["git add & commit"]
-    GenIndex --> GitCommit
-    
-    GitCommit --> GitPush["git push origin test/* / feat/*"]
-    GitPush --> GHActions["GitHub Actions (deploy-pages.yml)"]
-    GHActions --> GHPages["GitHub Pages デプロイ完了"]
+    Issue["GitHub Issue"] --> Prompt["Markdown専用プロンプト"]
+    Prompt --> ValidateMd["保存前検証: validate_markdown"]
+    ValidateMd --> Source["data/article_sources/issue-<番号>.md\n原本を原子的保存"]
+    Source --> Builder["markdown_textでMarkdown→HTML変換"]
+    Builder --> Html["public/articles/<slug>.html\n原子的保存"]
+    Html --> ValidateHtml["保存後検証: validate_html"]
+    ValidateHtml --> Index["public/index.htmlを同期\n通常上書き"]
+    Index --> State["data/issue_status.jsonの状態を更新"]
 ```
 
 ## 4. コンポーネント依存関係
@@ -160,13 +143,13 @@ graph TD
 
 ### ファイル: `.github/workflows/deploy-pages.yml`
 
-| 項目                 | 値                                                  |
-| -------------------- | --------------------------------------------------- |
+| 項目                 | 値                                                                   |
+| -------------------- | -------------------------------------------------------------------- |
 | トリガー             | `push` to `main`, `devlop`, `feat/*`, `test/*` / `workflow_dispatch` |
-| ランナー             | `ubuntu-latest`                                     |
-| パーミッション       | `contents: read`, `pages: write`, `id-token: write` |
-| 同時実行制御         | group `"pages"`, 進行中はキャンセルしない           |
-| アーティファクト対象 | `public` ディレクトリ（`path: './public'`）         |
+| ランナー             | `ubuntu-latest`                                                      |
+| パーミッション       | `contents: read`, `pages: write`, `id-token: write`                  |
+| 同時実行制御         | group `"pages"`, 進行中はキャンセルしない                            |
+| アーティファクト対象 | `public` ディレクトリ（`path: './public'`）                          |
 
 ### ステップ
 
@@ -226,8 +209,28 @@ graph TD
 
 ## 10. 改訂履歴 (Change Log)
 
-| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
-| :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
-| Rev.1.1 | 2026-08-15 | 開発チーム | 自由形式Markdown変換アーキテクチャおよびStage 0.5〜5引用アンカー自動連携仕様を追加 |
+| 版数    | 改訂日     | 変更者     | 変更内容・変更理由 (Why)                                                                                                         |
+| :------ | :--------- | :--------- | :------------------------------------------------------------------------------------------------------------------------------- |
+| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化                                                                     |
+| Rev.1.1 | 2026-08-15 | 開発チーム | 自由形式Markdown変換アーキテクチャおよびStage 0.5〜5引用アンカー自動連携仕様を追加                                               |
 | Rev.1.2 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：データフロー図をMarkdown/JSONハイブリッド対応に更新、ディレクトリ構造にutilsモジュール群を追記 |
+## 追補: Output層の現行契約（2026-08-31）
+
+Issue起点の記事生成では、記事本文の正規入力をMarkdownとする。処理は「Issue取得 → Markdown生成 → 保存前検証 → `data/article_sources/issue-<番号>.md`への原本保存 → `markdown_text`からのHTML原子的保存 → 保存後HTML検証 → `public/index.html`同期 → Issue状態更新」の順に実行する。
+
+記事本文の外部入力およびLLM出力としてのJSONはADR-001により廃止する。`issue_status.json`およびカテゴリ設定JSONは、状態管理・設定用途として従来どおり読み書きする。記事JSON修復経路の撤去はFeature `FEAT-02`で管理する。
+
+| 成果物       | 正本・保存方式                                     | 現在の保証範囲                           |
+| :----------- | :------------------------------------------------- | :--------------------------------------- |
+| Issue状態    | `data/issue_status.json`、原子的JSON保存           | 試行・失敗・成果物情報を記録する。       |
+| Markdown原本 | `data/article_sources/issue-<番号>.md`、原子的保存 | 保存済み原本のみからHTMLを再生成できる。 |
+| 記事HTML     | `public/articles/<slug>.html`、原子的保存          | 保存後にHTML骨格・リンクを検証する。     |
+| index        | `public/index.html`、通常上書き                    | 原子的書込み・保存後検証・補償は未保証。 |
+
+実装上の未完了機能は`docs/features/KNB-FEAT-001_Output層整合性・安全性残件.md`、文書更新は`docs/analysis/KNB-PM-001_Output層整合性・安全性改善_開発タスク管理.md`で管理する。
+
+## 改訂履歴（追記）
+
+| 日付       | 内容                                                                      |
+| :--------- | :------------------------------------------------------------------------ |
+| 2026-08-31 | Output層のMarkdown正規入力、成果物の正本・保存方式、Feature管理境界を追記 |
