@@ -49,11 +49,9 @@ Issue同期はMarkdownを生成し、保存前にMarkdown検証、`data/article_
 ## 4. #11 / #13 調査記録
 `data/article_sources/` に対象Markdown原本は存在せず、`public/articles/` に対象記事HTMLは存在しない。`public/index.html`には対象記事への参照がなく、リポジトリ内に対象処理の実行履歴も確認できなかった。したがって成果物の成功・失敗原因を推測で補わず、`failure_reason`へ調査結果を記録した。再試行は失敗原因を解消したうえで、対象Issueごとの明示承認後に限る。
 
-## 5. 残課題と完了基準
-1. `public/index.html` を原子的書込みへ移行し、保存後に記事リンク・タイトル・日付・重複を検証する。
-2. `repair_truncated_json` を削除し、JSON生成・修復契約を残さない。
-3. 未対応Markdown構文の明示的な検出・拒否を追加する。現時点で相対リンクは検証器が許可している。
-4. 原本・HTML・index・状態の成功／各失敗段階を通す同期統合テストを整備する。
+## 5. 実装残件のFeature管理
+
+実装上の残件は、本ブランチのドキュメント更新タスクとは分離して`docs/features/KNB-FEAT-001_Output層整合性・安全性残件.md`で管理する。実装済みのOUT-01〜OUT-06相当は`docs/features/archive/KNB-FEAT-001_Output層基本実装_完了.md`へアーカイブした。本書では実装タスクを更新せず、ドキュメント更新だけを第7節で管理する。
 
 ## 6. 改訂履歴
 | 版数 | 日付       | 変更内容                                              |
