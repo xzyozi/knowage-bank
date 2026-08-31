@@ -1,126 +1,69 @@
 ---
 title: "データ構造仕様書（永続化データスキーマ・ファイル状態管理仕様）"
 document_type: "data_structure_specification"
-version: "1.1"
+version: "1.2"
 created_at: "2026-08-13"
-updated_at: "2026-08-15"
+updated_at: "2026-08-31"
 author: "開発チーム"
-purpose: "本システム内で物理保存されるデータ構造、JSONスキーマ (DAO/State正本)、および原子置換・非破壊的データ管理契約を定義するため"
+purpose: "Issue状態、Markdown原本、HTML記事、indexの永続化スキーマと保存契約を定義するため"
 related_documents:
-  - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-001_詳細設計書_GitHubIssue同期.md"
   - "KNB-DD-002_詳細設計書_記事仕様.md"
   - "KNB-DD-003_詳細設計書_インデックス生成仕様.md"
 ---
-
 # データ構造仕様書（永続化データスキーマ・ファイル状態管理仕様）
-**データ構造・JSONスキーマ・永続化保存契約**
-
-| 項目 | 内容 |
-| :--- | :--- |
+| 項目     | 内容       |
+| :------- | :--------- |
 | 文書番号 | KNB-DS-001 |
-| ドキュメント名 | データ構造仕様書（永続化データスキーマ・ファイル状態管理仕様） |
-| 版数 | Rev.1.1 |
-| 改訂日 | 2026-08-15 |
-| 作成日 | 2026-08-13 |
-| 作成者 | 開発チーム |
+| 版数     | Rev.1.2    |
+| 改訂日   | 2026-08-31 |
 
----
-
-## 1. 概要とデータ管理方針
-
-### 1.1 管理対象データの目的
-本設計書は、本システムで永続化保存されるローカルJSONデータベース（`data/issue_status.json`）、外部カテゴリ設定（`config/category_config.json`）、およびビルド出力されるデータ構造のスキーマと永続化ルールを規定する。
-
-### 1.2 データ境界 (DAO / 永続化ストレージ正本)
-- **データアクセス・永続化正本 (DAO / State)**: 本書はディスクに物理保存されるJSONデータのプロパティ構造・データ型・状態タクソノミーの正本とする。
-- **DTOとの使い分け**: 関数の引数・戻り値等のメモリ上データ構造については「詳細設計書 (DD)」を参照すること。
-
----
-
-## 2. データモデルおよび JSON スキーマ仕様
-
-### 2.1 データエンティティモデル (Mermaid ER図)
-
+## 1. 永続化モデル
 ```mermaid
 erDiagram
-    ISSUE_STATUS_DB ||--o{ ISSUE_RECORD : contains
-    CATEGORY_CONFIG ||--o{ CLUSTER_DEFINITION : defines
-    ISSUE_RECORD ||--|| ARTICLE_HTML : generates
-
-    ISSUE_STATUS_DB {
-        string last_sync_at
-    }
-    ISSUE_RECORD {
-        int number PK
-        string title
-        string body
-        string state
-        string status
-        string processed_at
-        string article_file
-    }
-    CATEGORY_CONFIG {
-        array domains
-    }
-    CLUSTER_DEFINITION {
-        string cluster_id PK
-        string domain
-        string eyebrow
-        string h3_heading
-    }
-    ARTICLE_HTML {
-        string slug PK
-        string title
-        string creation_date
-    }
+  ISSUE_STATUS_DB ||--o{ ISSUE_RECORD : contains
+  ISSUE_RECORD ||--o| ARTICLE_SOURCE : records
+  ISSUE_RECORD ||--o| ARTICLE_HTML : records
+  ARTICLE_HTML }o--|| PUBLIC_INDEX : listed_by
+  ISSUE_STATUS_DB { string last_sync_at }
+  ISSUE_RECORD { int number string status string article_source_file string article_file bool index_synced string attempt_id string failed_at string failure_reason }
+  ARTICLE_SOURCE { string path string markdown_text }
+  ARTICLE_HTML { string path string html_text }
+  PUBLIC_INDEX { string path }
 ```
+`issue_status.json`がIssue処理状態の正本である。Markdown原本は`data/article_sources/issue-<番号>.md`、HTML記事は`public/articles/<filename>`、indexは`public/index.html`に保存する。
 
-### 2.2 GitHub Issue ローカル同期データスキーマ (`data/issue_status.json`)
+## 2. Issueレコードスキーマ
+| フィールド                   | 型                    | 既定値        | 制約・意味                                             |
+| :--------------------------- | :-------------------- | :------------ | :----------------------------------------------------- |
+| `number` / `title` / `state` | int / string / string | なし          | GitHub Issue番号、題名、`open`または`closed`。         |
+| `body`                       | string                | `""`          | Issue本文。                                            |
+| `status`                     | enum                  | `unprocessed` | `unprocessed`、`processing`、`processed`、`failed`。   |
+| `processed_at`               | ISO8601文字列         | null          | 完了記録時刻。                                         |
+| `article_source_file`        | string                | null          | Markdown原本名。                                       |
+| `article_file`               | string                | null          | 記事HTML名。                                           |
+| `index_synced`               | bool                  | false         | index同期を完了として記録した値。                      |
+| `attempt_id`                 | UUID文字列            | null          | 処理試行ID。                                           |
+| `failed_at`                  | ISO8601文字列         | null          | 失敗記録時刻。                                         |
+| `failure_reason`             | string                | null          | 段階と利用者向け要約。秘密情報・応答全文は保存しない。 |
 
-| フィールド名 | データ型 | 必須性 | デフォルト値 | フィールドの意味・制約条件 |
-| :--- | :--- | :---: | :--- | :--- |
-| `last_sync_at` | 文字列 (ISO8601) | 任意 | `null` | 前回 GitHub API と差分同期（since）を行った最終日時 |
-| `issues` | オブジェクト | 必須 | `{}` | Issue 番号文字列をキーとする Issue レコード辞書 |
-| `issues.<id>.number` | 数値 (int) | 必須 | - | GitHub Issue の一意な番号 |
-| `issues.<id>.title` | 文字列 | 必須 | - | Issue のタイトルテキスト |
-| `issues.<id>.body` | 文字列 | 任意 | `""` | Issue の本文テキスト |
-| `issues.<id>.state` | 文字列 | 必須 | `"open"` | GitHub 上の状態 (`open` / `closed`) |
-| `issues.<id>.status` | 文字列 (Enum) | 必須 | `"unprocessed"` | 処理状態 (`unprocessed`, `processing`, `processed`, `failed`) |
-| `issues.<id>.processed_at` | 文字列 (ISO8601) | 任意 | `null` | 記事生成が完了した日時 |
-| `issues.<id>.article_file` | 文字列 | 任意 | `null` | 生成された記事 HTML のスラッグファイル名 (例: `issue-12-test.html`) |
-| `issues.<id>.article_source_file` | 文字列 | 任意 | `null` | 保存された Markdown 原本ファイル名 (例: `issue-12.md`) |
-| `issues.<id>.index_synced` | 真偽値 (bool) | 必須 | `false` | インデックス (`docs/index.html`) への同期完了状態 |
-| `issues.<id>.attempt_id` | 文字列 (UUID) | 任意 | `null` | 処理試行ごとの一意な識別子 |
-| `issues.<id>.failed_at` | 文字列 (ISO8601) | 任意 | `null` | 処理が失敗した日時 |
-| `issues.<id>.failure_reason` | 文字列 | 任意 | `null` | 失敗の例外種別・処理段階・要約メッセージ |
+## 3. 原子的書込み契約と実装状況
+`atomic_write_text`は同一ディレクトリの`<対象>.tmp`へUTF-8（BOMなし）・LFで書込み、flush・fsync後に`os.replace`する。失敗時は一時ファイルを削除し、例外を呼出元へ返す。`atomic_write_json`はJSON文字列化後に同契約を利用する。
 
-### 2.3 カテゴリ・クラスタ定義スキーマ (`config/category_config.json`)
+| 対象                     | 保存方式            | 状態                                       |
+| :----------------------- | :------------------ | :----------------------------------------- |
+| `data/issue_status.json` | `atomic_write_json` | 実装済み                                   |
+| Markdown原本             | `atomic_write_text` | 実装済み                                   |
+| 記事HTML                 | `atomic_write_text` | 実装済み                                   |
+| `public/index.html`      | 通常の上書き        | 原子的書込み・保存後検証は未対応の追跡事項 |
 
-| フィールド名 | データ型 | 必須性 | フィールドの意味・制約条件 |
-| :--- | :--- | :---: | :--- |
-| `clusters` | オブジェクト | 必須 | クラスタIDをキーとする定義オブジェクト |
-| `clusters.<id>.domain` | 文字列 | 必須 | 属する大カテゴリドメイン (`dev`, `game`, `ai`, `infra`) |
-| `clusters.<id>.eyebrow` | 文字列 | 必須 | 記事の `.eyebrow` と完全一致判定されるカテゴリ表記 (例: `開発 > バックエンド & API`) |
-| `clusters.<id>.h3` | 文字列 | 必須 | index.html に出力される見出し文字列 |
-| `cluster_order` | リスト (string) | 必須 | ドメイン内での表示優先順リスト |
+この契約は単一同期プロセスを前提とし、複数プロセス間のロックは提供しない。
 
----
+## 4. 後方互換性
+旧レコードに追加フィールドが存在しない場合、読取り上は`article_source_file`、`attempt_id`、`failed_at`、`failure_reason`を`null`、`index_synced`を`false`として扱う。欠損フィールドだけを根拠に既存の`status`や成果物情報を変更しない。書込み時に追加フィールドを持つ新スキーマへ更新できる。
 
-## 3. 永続化・原子置換契約・排他制御
-
-### 3.1 原子的書き込み契約 (Atomic Write Contract)
-JSONデータの更新時は、途中で書き込みが失敗して破壊されることを防ぐため、以下の手順を実行する。
-
-1. メモリ上でデータ構造を検証・シリアライズ
-2. 同一ディレクトリに一時ファイル生成 (`data/issue_status.json.tmp`)
-3. アトミックな置換処理 (`os.replace` やファイルシステム置換) を用いて正本ファイルを上書き更新
-
----
-
-## 4. 改訂履歴 (Change Log)
-
-| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
-| :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | 新規作成（TEMPLATE_データ構造仕様書.mdに基づく初版制定） |
-| Rev.1.1 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：KNB-DD-002への相互参照を追加 |
+## 5. 改訂履歴
+| 版数    | 改訂日     | 変更内容                                                                  |
+| :------ | :--------- | :------------------------------------------------------------------------ |
+| Rev.1.1 | 2026-08-15 | 文書間整合性レビュー反映                                                  |
+| Rev.1.2 | 2026-08-31 | ER図、実装済みの原子的書込み範囲、index追跡事項、既存レコード互換性を更新 |
