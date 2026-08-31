@@ -44,7 +44,12 @@
       "state": "open",
       "status": "failed",
       "processed_at": null,
-      "article_file": null
+      "article_file": null,
+      "article_source_file": null,
+      "index_synced": false,
+      "attempt_id": null,
+      "failed_at": null,
+      "failure_reason": "読み取り調査の結果、Markdown原本・記事HTML・public/index.htmlの参照・実行履歴はいずれも見つからなかった。成果物と履歴がないためfailedを維持し、再試行には明示承認が必要。"
     },
     "12": {
       "number": 12,
@@ -62,7 +67,12 @@
       "state": "open",
       "status": "failed",
       "processed_at": null,
-      "article_file": null
+      "article_file": null,
+      "article_source_file": null,
+      "index_synced": false,
+      "attempt_id": null,
+      "failed_at": null,
+      "failure_reason": "読み取り調査の結果、Markdown原本・記事HTML・public/index.htmlの参照・実行履歴はいずれも見つからなかった。成果物と履歴がないためfailedを維持し、再試行には明示承認が必要。"
     },
     "14": {
       "number": 14,
