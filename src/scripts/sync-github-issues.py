@@ -35,61 +35,6 @@ except Exception as e:
     logger.error(f"Failed to import sync-article-dates: {e}")
 
 
-def repair_truncated_json(json_str: str) -> str:
-    """途中で切れてしまったJSONを複数段階で修復してパース可能な状態にする"""
-    json_str = json_str.strip()
-    if not json_str:
-        return json_str
-
-    # ステップ1: 末尾が不完全なキー定義（値がない "key": のみ）で終わっている場合に null を補完
-    # 例: ..."q": -> ..."q": null
-    import re as _re
-
-    # 末尾が `"key":` 形式で終わっている場合（値が欠損）
-    json_str = _re.sub(r'"([^"]+)"\s*:\s*$', r'"\1": null', json_str.rstrip())
-
-    # ステップ2: 末尾が `,` で終わっている場合は除去（不完全なリストの末尾カンマ）
-    json_str = json_str.rstrip().rstrip(",")
-
-    # ステップ3: 括弧とクォーテーションのスタック解析で不足している閉じ記号を追加
-    in_string = False
-    escaped = False
-    stack = []
-    i = 0
-
-    while i < len(json_str):
-        char = json_str[i]
-        if escaped:
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char == '"':
-            in_string = not in_string
-        elif not in_string:
-            if char in ("{", "["):
-                stack.append(char)
-            elif char in ("}", "]"):
-                if stack:
-                    top = stack[-1]
-                    if (char == "}" and top == "{") or (char == "]" and top == "["):
-                        stack.pop()
-        i += 1
-
-    # 文字列が閉じられていない場合はダブルクォートを補完
-    if in_string:
-        json_str += '"'
-
-    # 残っているスタックの括弧を逆順に閉じる
-    while stack:
-        top = stack.pop()
-        if top == "{":
-            json_str += "}"
-        elif top == "[":
-            json_str += "]"
-
-    return json_str
-
-
 def sanitize_filename(title: str, number: int) -> str:
     """Issueタイトルから安全なファイル名を生成する。日本語の場合はissue-{number}.htmlにフォールバック"""
     # 英数字とハイフンだけを抽出
