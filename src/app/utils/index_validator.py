@@ -28,9 +28,7 @@ _TITLE_PATTERNS = (
 )
 _DATE_PATTERN = re.compile(r'<time[^>]*\bdatetime="([^"]+)"')
 _HREF_PATTERN = re.compile(r'href="articles/([^"]+)"')
-_RECENT_SECTION_PATTERN = re.compile(
-    r"<!-- BEGIN_RECENT_ARTICLES.*?-->(.*?)<!-- END_RECENT_ARTICLES.*?-->", re.DOTALL
-)
+_RECENT_SECTION_PATTERN = re.compile(r"<!-- BEGIN_RECENT_ARTICLES.*?-->(.*?)<!-- END_RECENT_ARTICLES.*?-->", re.DOTALL)
 _DOMAINS = ("dev", "game", "ai", "infra")
 
 
