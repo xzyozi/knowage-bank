@@ -7,6 +7,8 @@ import sys
 
 # src/ を module 検索パスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from app.utils.atomic_file import atomic_write_text
+from app.utils.index_validator import IndexSyncError, validate_index_html
 from app.utils.logger import logger
 
 # ==========================================
@@ -137,17 +139,67 @@ def update_article_date(filepath: str, date: datetime) -> None:
         logger.error(f"Failed to update date in {filepath}: {e}")
 
 
+def _save_index_with_verification(
+    index_path: str,
+    new_content: str,
+    original_content: str,
+    articles: list[dict],
+    articles_dir: str,
+) -> None:
+    """index.html を原子的に保存し、保存後に再読込みして検証する。
+
+    検証に失敗した場合は保存前の内容へ原子的に復元したうえで `IndexSyncError` を送出する。
+    復元自体が失敗した場合も `IndexSyncError` を送出し、破損した index.html を暗黙に
+    残さないよう呼び出し元へ明示する。
+    """
+    try:
+        atomic_write_text(index_path, new_content)
+    except Exception as e:
+        raise IndexSyncError(f"Atomic write to index.html failed: {e}") from e
+
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            saved_content = f.read()
+    except Exception as e:
+        raise IndexSyncError(f"Failed to re-read saved index.html for verification: {e}") from e
+
+    validation = validate_index_html(saved_content, articles, articles_dir)
+    if validation.is_valid:
+        for warning in validation.warnings:
+            logger.warning(f"index.html validation warning: {warning}")
+        return
+
+    error_summary = "; ".join(validation.errors)
+    logger.error(f"Post-save validation of index.html failed: {error_summary}")
+
+    try:
+        atomic_write_text(index_path, original_content)
+    except Exception as restore_err:
+        raise IndexSyncError(
+            f"Post-save validation failed ({error_summary}) and restoring the previous "
+            f"index.html also failed: {restore_err}"
+        ) from restore_err
+
+    raise IndexSyncError(f"Post-save validation failed and previous index.html was restored: {error_summary}")
+
+
 # ==========================================
 # メイン処理
 # ==========================================
-def main() -> None:
+def main() -> bool:
+    """記事日付の同期と index.html の再生成を実行する。
+
+    Returns:
+        bool: index.html の保存・保存後検証まで含めて成功した場合は `True`。
+            記事ディレクトリ・index.html の不存在、保存・検証失敗時は `False`。
+    """
     logger.info("Starting article date synchronization and index generation...")
 
     articles = []
     articles_dir = os.path.join("public", "articles")
     if not os.path.exists(articles_dir):
         logger.error(f"Articles directory not found at {articles_dir}")
-        return
+        return False
 
     # HTMLファイル名のリストを自動スキャン (template.htmlは除外)
     html_files = [f for f in os.listdir(articles_dir) if f.endswith(".html") and f != "template.html"]
@@ -307,11 +359,13 @@ def main() -> None:
     index_path = os.path.join("public", "index.html")
     if not os.path.exists(index_path):
         logger.error(f"index.html not found at {index_path}. Generation aborted.")
-        return
+        return False
 
     try:
         with open(index_path, "r", encoding="utf-8") as f:
-            index_content = f.read()
+            original_index_content = f.read()
+
+        index_content = original_index_content
 
         # 新着セクションの置換
         recent_pattern = r"(<!-- BEGIN_RECENT_ARTICLES.*?-->).*?(<!-- END_RECENT_ARTICLES.*?-->)"
@@ -322,12 +376,17 @@ def main() -> None:
             pattern_str = f"(<!-- BEGIN_{dom.upper()}_CLUSTERS.*?-->).*?(<!-- END_{dom.upper()}_CLUSTERS.*?-->)"
             index_content = re.sub(pattern_str, f"\\1\n{dom_html}\n\\2", index_content, flags=re.DOTALL)
 
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write(index_content)
+        # 原子的保存 + 保存後検証 + 失敗時復元 (FEAT-01)
+        _save_index_with_verification(index_path, index_content, original_index_content, articles, articles_dir)
 
         logger.info("Successfully updated public/index.html with current articles.")
+        return True
+    except IndexSyncError as e:
+        logger.error(f"Failed to update index.html safely: {e}")
+        return False
     except Exception as e:
         logger.error(f"Failed to update index.html: {e}")
+        return False
 
 
 if __name__ == "__main__":

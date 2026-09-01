@@ -304,9 +304,22 @@ async def process_single_issue(
             manager.update_issue_status(issue_num, "failed", attempt_id=attempt_id, failure_reason=err_msg)
             return False
 
-        # インデックスの同期
+        # インデックスの同期 (OUT-06 / FEAT-01: 原子的書込み・保存後検証・失敗補償)
         logger.info("Running sync-article-dates to update index.html...")
-        sync_article_dates.main()
+        index_synced = sync_article_dates.main()
+        if not index_synced:
+            err_msg = "[Stage 6] index.html sync failed (atomic write or post-save validation)."
+            logger.error(f"❌ {err_msg} for Issue #{issue_num}")
+            manager.update_issue_status(
+                issue_num,
+                "failed",
+                attempt_id=attempt_id,
+                article_file=filename,
+                article_source_file=source_filename,
+                index_synced=False,
+                failure_reason=err_msg,
+            )
+            return False
 
         # 生成されたHTMLをGitに自動コミット＆プッシュ（オプション）
         if git_commit_flag or git_push:

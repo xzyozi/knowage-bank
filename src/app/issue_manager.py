@@ -196,12 +196,13 @@ class IssueManager:
                 record["article_source_file"] = article_source_file
             if index_synced is not None:
                 record["index_synced"] = index_synced
+            if article_file is not None:
+                # HTML自体は先行段階で保存済みの場合があるため、失敗時も成果物情報を保持する。
+                record["article_file"] = article_file
 
             if status == "processed":
                 record["processed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 record["index_synced"] = True if index_synced is None else index_synced
-                if article_file:
-                    record["article_file"] = article_file
                 record["failed_at"] = None
                 record["failure_reason"] = None
             elif status == "failed":
