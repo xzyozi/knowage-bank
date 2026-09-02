@@ -8,7 +8,7 @@
 記事データをJSONとしてLLMに生成させ、欠損・途中切れを修復する方式は入力契約が複雑で、Markdown変換経路と二重管理になっていた。現在のIssue同期はMarkdownを正規入力として原本保存・HTML生成・検証を行う。
 
 ## 決定
-記事本文の外部入力およびLLM出力としてのJSONは廃止し、Markdownのみを正規入力とする。`repair_truncated_json`を含む記事JSON生成・修復経路はFeature `FEAT-02` で撤去する。
+記事本文の外部入力およびLLM出力としてのJSONは廃止し、Markdownのみを正規入力とする。`repair_truncated_json`を含む記事JSON生成・修復経路はFeature `FEAT-02` で撤去済みである。
 
 ## 維持するJSON
 `data/issue_status.json`、`config/category_config.json`など、状態管理・設定のためのJSONファイルは維持する。既存ファイルの読込み・保存方式は本決定の対象外である。
