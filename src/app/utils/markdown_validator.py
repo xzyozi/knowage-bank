@@ -156,7 +156,9 @@ def _validate_citations_and_references(markdown_text: str, result: ValidationRes
         footer_start = reference_matches[0].start()
         footer_text = markdown_text[footer_start:]
         footer_remainder = REFERENCE_ENTRY_PATTERN.sub("", footer_text)
-        footer_remainder = re.sub(r"^\s*#{1,3}\s*(?:出典|参考文献|参考資料)\s*$", "", footer_remainder, flags=re.MULTILINE)
+        footer_remainder = re.sub(
+            r"^\s*#{1,3}\s*(?:出典|参考文献|参考資料)\s*$", "", footer_remainder, flags=re.MULTILINE
+        )
         if footer_remainder.strip():
             result.add_error("Reference entries must be contiguous at the end of Markdown.")
 
