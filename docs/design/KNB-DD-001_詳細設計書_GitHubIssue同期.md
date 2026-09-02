@@ -48,7 +48,7 @@ flowchart TD
 2. SSE接続のMCP `run_deep_research`を最大1800秒で呼び出す。接続・実行失敗時はIssue本文だけをリサーチ結果としてフォールバックする。
 3. ChatModelにMarkdownのみを要求する。外側の`markdown`/`md`コードフェンスは除去する。
 4. `validate_markdown`成功後に原本を保存し、`ArticleBuilder.save_article({"markdown_text": markdown_text}, filename)`でHTMLを生成する。`validate_html`成功後にindex同期する。
-旧JSON修復の`repair_truncated_json`関数はファイル内に残存するが、この同期フローの入力契約ではない。削除は追跡事項とする。
+旧JSON修復の`repair_truncated_json`および記事JSON生成・解析経路は撤去済みであり、同期フローはMarkdown入力だけを受け付ける。
 
 ## 4. 状態情報
 | フィールド                     | 意味                                                             |
