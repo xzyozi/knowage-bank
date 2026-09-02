@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from mcp.types import TextContent
 
 from app.article_builder import ArticleBuilder
 from app.chatmodel import ChatModel
@@ -45,11 +46,7 @@ async def _get_research_text() -> str:
             )
     if not hasattr(result, "content"):
         return str(result)
-    return "\n".join(
-        content.text if hasattr(content, "text") else content.get("text", "")
-        for content in result.content
-        if hasattr(content, "text") or isinstance(content, dict)
-    )
+    return "\n".join(content.text for content in result.content if isinstance(content, TextContent))
 
 
 async def main() -> None:
