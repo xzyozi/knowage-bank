@@ -36,9 +36,9 @@ related_documents:
 | テストID  | 状態               | シナリオ                           | 期待結果                                                                                  |
 | :-------- | :----------------- | :--------------------------------- | :---------------------------------------------------------------------------------------- |
 | IT-OUT-01 | 実装済み・検証待ち | 有効なMarkdownを生成する           | 原本・HTML・indexを保存し、`processed`、成果物名、`index_synced=true`、試行IDを記録する。 |
-| IT-OUT-02 | 未実装             | `unprocessed`がない                | 外部呼出し・成果物保存・状態変更を行わず、対象なしとして終了する。                        |
+| IT-OUT-02 | 実装済み・検証待ち | `unprocessed`がない                | 外部呼出し・成果物保存・状態変更を行わず、対象なしとして終了する。                        |
 | IT-OUT-03 | 実装済み・検証待ち | Markdown検証が失敗する             | 原本・HTML・indexを保存せず、`failed`に段階・理由・試行IDを記録する。                     |
-| IT-OUT-04 | 未実装             | Markdown原本保存が失敗する         | `failed`を記録し、後続のHTML生成・index同期を実行しない。                                 |
+| IT-OUT-04 | 実装済み・検証待ち | Markdown原本保存が失敗する         | `failed`を記録し、後続のHTML生成・index同期を実行しない。                                 |
 | IT-OUT-05 | 実装済み・検証待ち | HTML保存後検証が失敗する           | 原本とHTMLは残し、index同期・`processed`更新を行わず`failed`を記録する。                  |
 | IT-OUT-06 | 実装済み・検証待ち | index同期が失敗する                | 原本・HTML成果物を記録し、`failed`、`index_synced=false`、失敗理由を記録する。            |
 | IT-OUT-07 | 既存単体テスト     | 保存済みMarkdown原本から再生成する | LLM・MCP・GitHub APIを呼ばずにHTMLを再生成できる。                                        |
