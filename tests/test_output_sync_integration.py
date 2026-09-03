@@ -256,3 +256,71 @@ def test_process_single_issue_marks_saved_outputs_unsynchronized_when_index_fail
     assert record["article_file"] == "issue-45-index-failure.html"
     assert record["index_synced"] is False
     assert record["failure_reason"].startswith("[Stage 6] index.html sync failed")
+
+
+@pytest.mark.integration
+def test_main_exits_without_outputs_when_no_issue_is_unprocessed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未処理Issueがないrun-once実行は外部生成や成果物保存を行わず終了する。"""
+    sync_module = _load_sync_module(monkeypatch)
+
+    class FakeManager:
+        def __init__(self) -> None:
+            self.sync_count = 0
+
+        def sync_issues(self) -> None:
+            self.sync_count += 1
+
+        def get_next_unprocessed_issue(self) -> None:
+            return None
+
+    manager = FakeManager()
+    monkeypatch.setattr(sync_module, "IssueManager", lambda: manager)
+    monkeypatch.setattr(sys, "argv", ["sync-github-issues.py", "--run-once"])
+
+    __import__("asyncio").run(sync_module.main())
+
+    assert manager.sync_count == 1
+
+
+@pytest.mark.integration
+def test_process_single_issue_records_failure_when_source_save_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """原本保存の例外ではHTML・index処理に進まずfailed状態を記録する。"""
+    sync_module = _load_sync_module(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    issue = {"number": 46, "title": "Source Failure", "body": "原本保存失敗の検証"}
+    manager = IssueManager(db_path=str(tmp_path / "issue_status.json"))
+    _create_unprocessed_issue(manager, issue)
+    downstream_calls: list[str] = []
+
+    class FakeChatModel:
+        def __init__(self) -> None:
+            self.responses = iter(("source failure research", VALID_MARKDOWN))
+
+        def generate_response(self, _: dict[str, Any]) -> SimpleNamespace:
+            return SimpleNamespace(content=next(self.responses))
+
+    def source_save_failure(*_: Any, **__: Any) -> None:
+        raise OSError("source directory is unavailable")
+
+    def unexpected_downstream_call(*_: Any, **__: Any) -> None:
+        downstream_calls.append("called")
+        raise AssertionError("Source save failure must stop HTML and index processing.")
+
+    monkeypatch.setattr(sync_module, "ChatModel", FakeChatModel)
+    monkeypatch.setattr(sync_module, "save_article_source", source_save_failure)
+    monkeypatch.setattr(sync_module, "ArticleBuilder", unexpected_downstream_call)
+    monkeypatch.setattr(sync_module.sync_article_dates, "main", unexpected_downstream_call)
+    monkeypatch.setattr(sync_module, "sse_client", lambda _: (_ for _ in ()).throw(RuntimeError("MCP disabled")))
+
+    processed = __import__("asyncio").run(sync_module.process_single_issue(issue, manager))
+
+    assert processed is False
+    assert downstream_calls == []
+    database = json.loads((tmp_path / "issue_status.json").read_text(encoding="utf-8"))
+    record = database["issues"]["46"]
+    assert record["status"] == "failed"
+    assert record["failure_reason"] == "[OSError] source directory is unavailable"
+    assert record["attempt_id"]
