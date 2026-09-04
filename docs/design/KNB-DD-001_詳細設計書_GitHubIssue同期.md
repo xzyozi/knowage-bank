@@ -1,9 +1,9 @@
 ---
 title: "詳細設計書（GitHub Issue同期・ローカル管理仕様）"
 document_type: "detailed_design"
-version: "1.3"
+version: "1.4"
 created_at: "2026-06-16"
-updated_at: "2026-08-31"
+updated_at: "2026-09-03"
 author: "開発チーム"
 purpose: "GitHub Issueの取得、Markdown原本・HTML記事・インデックス生成、および処理状態のローカル管理仕様を定義するため"
 related_documents:
@@ -15,8 +15,8 @@ related_documents:
 | 項目     | 内容       |
 | :------- | :--------- |
 | 文書番号 | KNB-DD-001 |
-| 版数     | Rev.1.3    |
-| 改訂日   | 2026-08-31 |
+| 版数     | Rev.1.4    |
+| 改訂日   | 2026-09-03 |
 
 ## 1. 基本方針
 GitHub Issueは読み取り専用で取得し、処理状況は`data/issue_status.json`に管理する。1実行サイクルは最古の`unprocessed`を最大1件処理する。記事同期の正規入力はJSONではなくMarkdownであり、Markdown原本を保存してからHTMLを生成する。
@@ -41,7 +41,7 @@ flowchart TD
   J --> M
   K --> M
 ```
-現実装では原本の保存、HTML保存、JSON状態保存は原子的書込みを利用する。index同期は通常上書きで、index保存後の検証・補償は未実装の追跡事項である。
+現実装では原本、HTML、JSON状態、indexの保存に原子的書込みを利用する。indexは保存後に再読込み・検証し、検証失敗時は保存前内容へ復元する。同期統合テストでオーケストレーションと状態記録を検証する。
 
 ## 3. MCP連携
 1. ChatModelがIssueから検索クエリを生成する。
@@ -60,7 +60,7 @@ flowchart TD
 | `attempt_id`                   | 処理試行のUUID。未試行・調査のみは`null`。                       |
 | `failed_at` / `failure_reason` | 失敗時刻と、秘密情報を含めない段階・要約。                       |
 
-`processed`は現実装でHTML検証とindex同期の後に設定する。ただしindex保存の原子性・保存後検証は未保証である。`failed`は自動で`unprocessed`へ戻さない。運用者が成果物・失敗理由を確認し、対象Issueの再試行を明示承認した場合だけ`unprocessed`へ変更して再試行できる。
+`processed`は現実装でHTML検証とindex同期の成功後に設定する。indexは原子的に保存され、保存後検証の失敗時は保存前内容へ復元する。`failed`は自動で`unprocessed`へ戻さない。運用者が成果物・失敗理由を確認し、対象Issueの再試行を明示承認した場合だけ`unprocessed`へ変更して再試行できる。
 
 ## 5. 後方互換性と運用
 過去のIssueレコードに追加状態フィールドがなければ、読取り時は`article_source_file`、`attempt_id`、`failed_at`、`failure_reason`を`null`、`index_synced`を`false`として扱う。#11/#13は成果物と実行履歴が確認できないため`failed`を維持し、再試行は未承認である。
@@ -70,3 +70,4 @@ flowchart TD
 | :------ | :--------- | :---------------------------------------------------------------------------------- |
 | Rev.1.2 | 2026-08-15 | 文書間整合性レビュー反映                                                            |
 | Rev.1.3 | 2026-08-31 | Markdown原本、前後検証、index同期、状態フィールド、failed再試行制約を実装実態へ更新 |
+| Rev.1.4 | 2026-09-03 | index原子性・保存後検証・失敗時復元と、FEAT-04統合テストの検証範囲を反映            |
