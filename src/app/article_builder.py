@@ -1,10 +1,10 @@
 from datetime import datetime
 import json
 import os
-from typing import Any
 
 from jinja2 import Template
 
+from app.utils.atomic_file import atomic_write_text
 from app.utils.citation_processor import apply_citations
 from app.utils.logger import logger
 from app.utils.markdown_cleaner import parse_reference_footer
@@ -62,66 +62,51 @@ class ArticleBuilder:
         return input_eyebrow
 
     def build_article_html(self, data: dict) -> str:
-        """JSONデータまたは任意のMarkdownデータからHTML文字列をパイプライン（Stage 0.5〜5）生成する"""
-        t = Template(self.template_content)
+        """Markdown原本からHTML文字列をパイプライン（Stage 0.5〜5）生成する。"""
+        raw_markdown = data.get("markdown_text")
+        if not isinstance(raw_markdown, str) or not raw_markdown.strip():
+            raise ValueError("markdown_text is required to build an article.")
 
-        # 自由形式の Markdown テキストが直接渡された場合
-        raw_markdown = data.get("markdown_text") or data.get("markdown")
-        parsed_data: dict[str, Any] = {}
-        raw_refs: dict[Any, Any] = {}
-        ref_list: list[Any] = []
-        body_html = data.get("body_html", "")
+        # Stage 0.5: クレンジング & 参考文献フッターの分離
+        clean_body_md, raw_refs = parse_reference_footer(raw_markdown)
 
-        if raw_markdown:
-            # Stage 0.5: クレンジング & 参考文献フッターの分離
-            clean_body_md, raw_refs = parse_reference_footer(raw_markdown)
+        # Stage 3a: Markdown -> HTML 基本変換
+        parsed_data = FlexibleMarkdownParser(clean_body_md).parse()
+        body_html = parsed_data.get("body_html", "")
 
-            # Stage 3a: Markdown -> HTML 基本変換
-            parser = FlexibleMarkdownParser(clean_body_md)
-            parsed_data = parser.parse()
-            body_html = parsed_data.get("body_html", "")
-            raw_lead = data.get("lead") or parsed_data.get("lead", "")
-
-            # Stage 3b: LLM等の citations_keep / citation_labels の適用とリナンバリング
-            citations_keep = data.get("citations_keep", [])
-            citation_labels = data.get("citation_labels", {})
-
-            body_html, lead_text, ref_list = apply_citations(
-                body_html, raw_refs, citations_keep, citation_labels, raw_lead
-            )
-
-        # メタデータ・項目の統合
-        raw_eyebrow = data.get("eyebrow") or parsed_data.get("eyebrow", "未分類")
-        normalized_eyebrow = self.normalize_eyebrow(raw_eyebrow)
+        # Stage 3b: 引用制御メタデータの適用とリナンバリング
+        body_html, lead_text, ref_list = apply_citations(
+            body_html,
+            raw_refs,
+            data.get("citations_keep", []),
+            data.get("citation_labels", {}),
+            parsed_data.get("lead", ""),
+        )
 
         now = datetime.now()
-
         render_data = {
-            "title": data.get("title") or parsed_data.get("title", "無題の記事"),
-            "eyebrow": normalized_eyebrow,
-            "lead": lead_text or data.get("lead") or parsed_data.get("lead", ""),
+            "title": parsed_data.get("title", "無題の記事"),
+            "eyebrow": self.normalize_eyebrow(parsed_data.get("eyebrow", "未分類")),
+            "lead": lead_text or parsed_data.get("lead", ""),
             "date_str": now.strftime("%Y-%m-%d"),
             "display_date": f"{now.year}年{now.month}月{now.day}日",
-            "qa": data.get("qa") or parsed_data.get("qa", []),
-            "sections": data.get("sections", []),
+            "qa": parsed_data.get("qa", []),
+            "sections": [],
             "body_html": body_html,
-            "key_points": data.get("key_points") or parsed_data.get("key_points", []),
-            "references": data.get("references") or parsed_data.get("references", []),
-            "ref_list": ref_list or data.get("ref_list", []),
+            "key_points": parsed_data.get("key_points", []),
+            "references": parsed_data.get("references", []),
+            "ref_list": ref_list,
         }
-
-        return t.render(render_data)
+        return Template(self.template_content).render(render_data)
 
     def save_article(self, data: dict, filename: str) -> str:
         """HTML記事をビルドして保存する"""
         html_str = self.build_article_html(data)
 
         articles_dir = os.path.join("public", "articles")
-        os.makedirs(articles_dir, exist_ok=True)
-
         output_path = os.path.join(articles_dir, filename)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_str)
+
+        atomic_write_text(output_path, html_str)
 
         logger.info(f"Article saved and built successfully: {output_path}")
         return output_path

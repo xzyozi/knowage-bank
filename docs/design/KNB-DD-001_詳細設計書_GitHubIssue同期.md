@@ -1,157 +1,73 @@
 ---
 title: "詳細設計書（GitHub Issue同期・ローカル管理仕様）"
 document_type: "detailed_design"
-version: "1.2"
+version: "1.4"
 created_at: "2026-06-16"
-updated_at: "2026-08-15"
+updated_at: "2026-09-03"
 author: "開発チーム"
-purpose: "GitHubリポジトリからIssueを取得し、記事自動生成トリガー制御および処理状況のローカル管理仕様を定義するため"
+purpose: "GitHub Issueの取得、Markdown原本・HTML記事・インデックス生成、および処理状態のローカル管理仕様を定義するため"
 related_documents:
-  - "KNB-BD-001_基本設計書.md"
   - "KNB-DD-002_詳細設計書_記事仕様.md"
-  - "KNB-DD-007_詳細設計書_ローカルLLM運用仕様.md"
+  - "KNB-DD-003_詳細設計書_インデックス生成仕様.md"
   - "KNB-DS-001_データ構造仕様書_永続化データスキーマ.md"
 ---
-
 # 詳細設計書（GitHub Issue同期・ローカル管理仕様）
-**GitHub Issue 取得・ローカル管理・MCP連携制御仕様**
-
-| 項目 | 内容 |
-| :--- | :--- |
+| 項目     | 内容       |
+| :------- | :--------- |
 | 文書番号 | KNB-DD-001 |
-| ドキュメント名 | 詳細設計書（GitHub Issue同期・ローカル管理仕様） |
-| 版数 | Rev.1.2 |
-| 改訂日 | 2026-08-15 |
-| 作成日 | 2026-06-16 |
-| 作成者 | 開発チーム |
+| 版数     | Rev.1.4    |
+| 改訂日   | 2026-09-03 |
 
----
-
-本ドキュメントは、指定したGitHubリポジトリからIssueを取得し、その情報を元にした自動記事生成のトリガー制御、および処理状況のローカル管理を行うシステムの詳細設計を定義する。
-
-## 1. 目的と基本方針
-
-- **目的**: GitHub上のIssueを記事自動生成のインプット（要件定義/質問）として安全にローカルに読み込み、自動実行パイプラインのトリガーとする。
-- **Issue側の非干渉（編集禁止）**: 外部APIトークンへの追加権限要求を避けるため、GitHub上のIssue状態（Close、ラベル、コメントなど）は変更せず、すべてローカルで処理状況を管理する。
-- **処理スロットリング**: 重いLLMやDeep Researchの処理を集中させないため、1回の定期実行サイクルにつき**最大1件のみ**未処理のIssueをピックアップして処理する。
-- **最小通信量**: `since` パラメータを使用した差分取得により、API消費量を最小化する。
-
----
+## 1. 基本方針
+GitHub Issueは読み取り専用で取得し、処理状況は`data/issue_status.json`に管理する。1実行サイクルは最古の`unprocessed`を最大1件処理する。記事同期の正規入力はJSONではなくMarkdownであり、Markdown原本を保存してからHTMLを生成する。
 
 ## 2. 処理フロー
-
 ```mermaid
 flowchart TD
-    Cron["【定期起動（30分 / 1時間ごと）】"] --> Step1["STEP 1: 前回取得日時(since)の読み込み"]
-    Step1 --> Step2["STEP 2: GitHub API からの差分Issue取得<br>(sort=updated, direction=desc, state=all, per_page=100, since=前回日時)"]
-    Step2 --> Step3["STEP 3: ローカル状態管理(JSON)の更新<br>・新規Issue: unprocessed として登録<br>・更新Issue: タイトルや本文変更時にローカル情報更新"]
-    Step3 --> Step4["STEP 4: 処理対象Issueの選定（スロットリング）<br>・unprocessed 状態の最も古いIssueを1件選択"]
-    Step4 --> Step5["STEP 5: 記事自動生成パイプラインの実行（MCP連携）<br>・ステータスを processing に変更<br>・LLMでリサーチクエリ生成 & MCP deepresearchMCP 実行<br>・構造化JSONから記事HTMLをビルド"]
-    
-    Step5 -->|成功| Step5Success["ステータスを processed に更新"]
-    Step5 -->|失敗| Step5Fail["ステータスを failed に更新"]
-    
-    Step5Success --> Step6["STEP 6: 今回の処理日時の保存 (sinceの更新)"]
-    Step5Fail --> Step6
-    Step6 --> EndNode(["[終了]"])
+  A[差分Issue取得・状態JSON更新] --> B[最古のunprocessedを1件選定]
+  B --> C[processing・attempt_idを記録]
+  C --> D[LLMでリサーチクエリ生成]
+  D --> E[MCP run_deep_research]
+  E --> F[Markdown記事を生成]
+  F --> G[Markdown保存前検証]
+  G --> H[data/article_sourcesへMarkdown原本を保存]
+  H --> I[markdown_textからHTML生成・保存]
+  I --> J[HTML保存後検証]
+  J --> K[sync-article-datesでpublic/index.htmlを同期]
+  K --> L[processed・成果物情報を記録]
+  C --> M[failed・理由・時刻を記録]
+  G --> M
+  I --> M
+  J --> M
+  K --> M
 ```
+現実装では原本、HTML、JSON状態、indexの保存に原子的書込みを利用する。indexは保存後に再読込み・検証し、検証失敗時は保存前内容へ復元する。同期統合テストでオーケストレーションと状態記録を検証する。
 
----
+## 3. MCP連携
+1. ChatModelがIssueから検索クエリを生成する。
+2. SSE接続のMCP `run_deep_research`を最大1800秒で呼び出す。接続・実行失敗時はIssue本文だけをリサーチ結果としてフォールバックする。
+3. ChatModelにMarkdownのみを要求する。外側の`markdown`/`md`コードフェンスは除去する。
+4. `validate_markdown`成功後に原本を保存し、`ArticleBuilder.save_article({"markdown_text": markdown_text}, filename)`でHTMLを生成する。`validate_html`成功後にindex同期する。
+旧JSON修復の`repair_truncated_json`および記事JSON生成・解析経路は撤去済みであり、同期フローはMarkdown入力だけを受け付ける。
 
-## 3. GitHub API パラメータ仕様
+## 4. 状態情報
+| フィールド                     | 意味                                                             |
+| :----------------------------- | :--------------------------------------------------------------- |
+| `status`                       | `unprocessed`、`processing`、`processed`、`failed`               |
+| `article_source_file`          | 保存済みMarkdown原本のファイル名。未作成時は`null`。             |
+| `article_file`                 | 生成済みHTMLのファイル名。未作成時は`null`。                     |
+| `index_synced`                 | index同期完了として記録した値。`false`は未同期または失敗を示す。 |
+| `attempt_id`                   | 処理試行のUUID。未試行・調査のみは`null`。                       |
+| `failed_at` / `failure_reason` | 失敗時刻と、秘密情報を含めない段階・要約。                       |
 
-Issueをフェッチする際のAPIエンドポイントおよびクエリパラメータの仕様。
+`processed`は現実装でHTML検証とindex同期の成功後に設定する。indexは原子的に保存され、保存後検証の失敗時は保存前内容へ復元する。`failed`は自動で`unprocessed`へ戻さない。運用者が成果物・失敗理由を確認し、対象Issueの再試行を明示承認した場合だけ`unprocessed`へ変更して再試行できる。
 
-- **エンドポイント**: `GET /repos/{owner}/{repo}/issues`
-- **ヘッダー**: `Accept: application/vnd.github+json`, `Authorization: Bearer <TOKEN>`
-- **クエリパラメータ**:
+## 5. 後方互換性と運用
+過去のIssueレコードに追加状態フィールドがなければ、読取り時は`article_source_file`、`attempt_id`、`failed_at`、`failure_reason`を`null`、`index_synced`を`false`として扱う。#11/#13は成果物と実行履歴が確認できないため`failed`を維持し、再試行は未承認である。
 
-| パラメータ | 設定値 | 役割 |
-| :--- | :--- | :--- |
-| `sort` | `updated` | 更新日時順にソートする |
-| `direction` | `desc` | 更新の新しい順（降順）に取得する |
-| `state` | `all` | Open（解決前）および Close（解決済）のすべてのIssueを対象とする |
-| `per_page` | `100` | 1リクエストで取得する最大件数。ページ送り回数を抑える |
-| `since` | `YYYY-MM-DDTHH:MM:SSZ` | 指定日時以降に更新のあったIssueのみを差分取得する（インクリメンタル） |
-
----
-
-## 4. ローカル状態管理の仕様
-
-GitHub上のIssueを書き換えないため、処理状況はローカルのJSONデータベースで一元管理する。
-
-### 4.1 管理ファイル配置
-- 配置パス: `data/issue_status.json` (未存在時は初期化時に自動作成)
-
-### 4.2 JSON スキーマ
-```json
-{
-  "last_sync_at": "2026-06-15T21:40:00Z",
-  "issues": {
-    "12": {
-      "number": 12,
-      "title": "MCPトランスポートのセキュリティ脆弱性について",
-      "body": "本文...",
-      "state": "open",
-      "status": "processed",
-      "processed_at": "2026-06-15T21:42:00Z",
-      "article_file": "mcp-transport-security.html"
-    },
-    "13": {
-      "number": 13,
-      "title": "KIROのAgent Hooks設定について",
-      "body": "本文...",
-      "state": "open",
-      "status": "unprocessed",
-      "processed_at": null,
-      "article_file": null
-    }
-  }
-}
-```
-
-### 4.3 状態（`status`）定義
-- `unprocessed` (未処理): 取得されローカルに登録された初期状態。
-- `processing` (処理中): 現在記事生成パイプラインが実行中の状態。
-- `processed` (処理完了): 記事が正常にビルド・インデックス同期された状態。
-- `failed` (エラー・処理失敗): 生成処理中にエラーが発生し、処理が中断された状態。
-
----
-
-## 5. 定期実行とスロットリングの仕様
-
-### 5.1 実行周期
-- 30分または1時間周期でタスクを定期ポーリング実行する。
-- 実行には `cron` または定期タスクランナー（Pythonスクリプトによるループ＋sleep、あるいはシステムタスクスケジュール）を用いる。
-
-### 5.2 スロットリング制御 (1回につき1件のみ)
-`data/issue_status.json` 内を検索し、状態が `unprocessed` となっているIssueの中で、**最もIssue番号が若い（＝作成されたのが古い）**Issueを1件だけ操作対象とする。
-これにより、複数のIssueが一度に届いた場合でも、APIやローカルリソースを枯渇させることなく、30分/1時間のサイクルごとに順番に処理を行う。
-
----
-
-## 6. MCP Deep Research 連携の仕様
-
-### 6.1 環境変数
-MCPサーバーとのSSE接続には以下の環境変数を使用する。
-
-- **`KNOWAGE_BANK_DEEPRESEARCH_SSE_URL`**: Deep Research MCPサーバーが提供するSSE接続用エンドポイント（デフォルト: `http://localhost:8000/sse`）。
-
-### 6.2 実行プロセスと例外設計
-1. **リサーチクエリの抽出**: 
-   - LLM（ChatModel）を呼び出し、Issueの「タイトル」および「本文」からDeep Research用リサーチクエリ（検索エンジンに投げるための自然言語質問文）を生成する。
-2. **MCP連携 (run_deep_researchの呼び出し)**:
-   - `sse_client` で接続を確立し、`run_deep_research` ツールを実行。
-   - ネットワーク遮断やサーバー未起動などの理由でMCP接続に失敗、または処理タイムアウト（1800秒）が発生した場合は、リサーチ結果を空としてフォールバック処理を実行するか、もしくはエラーとしてステータスを `failed` にする。
-3. **最終記事の構造化JSONおよび自由形式Markdownパイプライン変換**:
-   - 得られたリサーチ結果テキストをコンテキストに含め、メタデータ（`eyebrow`, `tags`, `qa`, `citations_keep`, `citation_labels`）の選定と自由形式 Markdown から `site.css` 適合 HTML への安全な変換パイプライン（Stage 0.5 〜 5）を実行する（→ 詳細は KNB-DD-002 §16 を参照）。
-
----
-
-## 7. 改訂履歴 (Change Log)
-
-| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
-| :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化 |
-| Rev.1.1 | 2026-08-15 | 開発チーム | 自由形式Markdownパース、Stage 0.5〜5 引用リナンバリングおよびアンカー自動連携仕様を追加 |
-| Rev.1.2 | 2026-08-15 | 開発チーム | ドキュメント間整合性レビュー反映：KNB-DS-001およびKNB-DD-007への相互参照・注記を追加 |
+## 6. 改訂履歴
+| 版数    | 改訂日     | 変更内容                                                                            |
+| :------ | :--------- | :---------------------------------------------------------------------------------- |
+| Rev.1.2 | 2026-08-15 | 文書間整合性レビュー反映                                                            |
+| Rev.1.3 | 2026-08-31 | Markdown原本、前後検証、index同期、状態フィールド、failed再試行制約を実装実態へ更新 |
+| Rev.1.4 | 2026-09-03 | index原子性・保存後検証・失敗時復元と、FEAT-04統合テストの検証範囲を反映            |
