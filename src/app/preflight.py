@@ -32,7 +32,9 @@ def collect_preflight(target: PreflightTarget) -> list[PreflightCheck]:
             sys.version_info < (3, 10),
             f"Python {sys.version_info.major}.{sys.version_info.minor} を使用中（3.10以上が必要）",
         ),
-        PreflightCheck(".env", not (root_dir / ".env").exists(), ".env が見つかりません。.env.sampleをコピーしてください。"),
+        PreflightCheck(
+            ".env", not (root_dir / ".env").exists(), ".env が見つかりません。.env.sampleをコピーしてください。"
+        ),
     ]
 
     if target == "issue-sync":
@@ -41,8 +43,14 @@ def collect_preflight(target: PreflightTarget) -> list[PreflightCheck]:
                 PreflightCheck("GitHub repository", not bool(config.GITHUB_REPOSITORY), "対象リポジトリが未設定です。"),
                 PreflightCheck("LLM endpoint", not bool(config.OLLAMA_BASE_URL), "OLLAMA_BASE_URLが未設定です。"),
                 PreflightCheck("LLM model", not bool(config.KNOWAGE_BANK_MODEL), "KNOWAGE_BANK_MODELが未設定です。"),
-                PreflightCheck("MCP package", importlib.util.find_spec("mcp") is None, "mcpパッケージが見つかりません。"),
-                PreflightCheck("Deep Research", False, f"接続先: {config.DEEPRESEARCH_SSE_URL}（未接続時はIssue本文へフォールバック）"),
+                PreflightCheck(
+                    "MCP package", importlib.util.find_spec("mcp") is None, "mcpパッケージが見つかりません。"
+                ),
+                PreflightCheck(
+                    "Deep Research",
+                    False,
+                    f"接続先: {config.DEEPRESEARCH_SSE_URL}（未接続時はIssue本文へフォールバック）",
+                ),
             ]
         )
     else:
