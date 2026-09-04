@@ -53,7 +53,13 @@ uv sync --all-extras
 
 ## 4. 安全な動作確認
 
-外部サービスへ書き込まずに、ブラウザ履歴の収集・選定経路を確認する。
+実行前に、対象経路で必要な設定と依存を副作用なく確認する。
+
+```powershell
+uv run python src/scripts/preflight-check.py --target issue-sync
+```
+
+ブラウザ履歴を外部サービスへ書き込まずに、ブラウザ履歴の収集・選定経路を確認する。
 
 ```powershell
 uv run python src/scripts/run-personal-knowledge-collector.py --backend local --no-gemini --dry-run

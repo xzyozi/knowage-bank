@@ -26,6 +26,12 @@ uv sync --all-extras
 
 ## 安全な動作確認
 
+実行前に、対象経路で必要な設定と依存を副作用なく確認します。
+
+```powershell
+uv run python src/scripts/preflight-check.py --target issue-sync
+```
+
 ブラウザ履歴を外部サービスへ書き込まず確認します。
 
 ```powershell
