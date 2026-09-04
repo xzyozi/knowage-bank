@@ -29,8 +29,8 @@ def _install_mcp_stub(monkeypatch: pytest.MonkeyPatch) -> None:
     mcp_client_module = ModuleType("mcp.client")
     mcp_sse_module = ModuleType("mcp.client.sse")
 
-    mcp_module.ClientSession = object
-    mcp_sse_module.sse_client = lambda _: None
+    setattr(mcp_module, "ClientSession", object)
+    setattr(mcp_sse_module, "sse_client", lambda _: None)
 
     monkeypatch.setitem(sys.modules, "mcp", mcp_module)
     monkeypatch.setitem(sys.modules, "mcp.client", mcp_client_module)
