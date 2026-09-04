@@ -216,6 +216,9 @@ async def process_single_issue(
         elif markdown_text.startswith("```md") and markdown_text.endswith("```"):
             markdown_text = markdown_text[5:-3].strip()
 
+        if raw_content.endswith(("\n", "\r")):
+            markdown_text += "\n"
+
         # 3.5. 保存前検証 (Stage 3 / OUT-05, OUT-06)
         val_md = validate_markdown(markdown_text)
         if not val_md.is_valid:
