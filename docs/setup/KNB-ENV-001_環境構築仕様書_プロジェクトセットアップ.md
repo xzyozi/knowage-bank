@@ -1,152 +1,85 @@
 ---
 title: "環境構築仕様書（プロジェクトセットアップ・依存関係管理仕様）"
 document_type: "environment_spec"
-version: "1.0"
+version: "1.1"
 created_at: "2026-06-14"
-updated_at: "2026-08-13"
+updated_at: "2026-09-04"
 author: "開発チーム"
-purpose: "Hatch / pyproject.toml および pip-tools によるプロジェクト環境構築・依存関係管理フローを明記するため"
+purpose: "uv、pyproject.toml、uv.lockおよび環境変数による再現可能な開発環境の構築手順を定義する"
 related_documents:
-  - "KNB-BD-001_基本設計書.md"
-  - "KNB-TEST-001_テスト仕様書_単体テスト.md"
+  - "../design/KNB-BD-001_基本設計書.md"
+  - "../test/KNB-TEST-001_テスト仕様書_単体テスト.md"
 ---
 
 # 環境構築仕様書（プロジェクトセットアップ・依存関係管理仕様）
-**Hatch / pyproject.toml / pip-tools 依存関係管理・開発環境構築**
 
-| 項目 | 内容 |
-| :--- | :--- |
+| 項目     | 内容        |
+| :------- | :---------- |
 | 文書番号 | KNB-ENV-001 |
-| ドキュメント名 | 環境構築仕様書（プロジェクトセットアップ・依存関係管理仕様） |
-| 版数 | Rev.1.0 (初版制定) |
-| 改訂日 | 2026-08-13 |
-| 作成日 | 2026-06-14 |
-| 作成者 | 開発チーム |
+| 版数     | Rev.1.1     |
+| 改訂日   | 2026-09-04  |
 
----
+本プロジェクトは、Python依存関係と仮想環境の管理に`uv`を使用する。依存関係の正本は`pyproject.toml`、解決済みバージョンの正本は`uv.lock`とする。Hatch、pip-tools、`requirements.txt`、`setup.py`は使用しない。
 
-本ドキュメントは、本プロジェクトの環境構築手順、`pyproject.toml` / Hatch による開発環境制御、ならびに `pip-tools` による依存関係管理フローをプログラム仕様の粒度で定義する。
+## 1. 前提条件
 
-## 1. プロジェクトセットアップガイド (Hatch版)
+- Python 3.10以上
+- `uv`
+- GitHub Issue同期を実行する場合は、OllamaまたはLiteLLM互換のLLM接続先
+- Deep Researchを使用する場合は、MCP SSEサーバー
+- Geminiを使用する場合は、Gemini APIキー
 
-このプロジェクトは、依存関係と開発環境の管理に [Hatch](https://hatch.pypa.io/latest/) を使用します。プロジェクトルートにある `pyproject.toml` ファイルが、従来の `setup.py` の役割を置き換えます。
+## 2. 初期セットアップ
 
-### 1.1 初回のみ必要な準備
+プロジェクトルートで次を実行する。
 
-作業を始める前に、Hatchをインストールする必要があります。この作業は一度だけで結構です。
-
-```shell
-pip install hatch
+```powershell
+Copy-Item .env.sample .env
+uv sync --all-extras
 ```
 
-### 1.2 プロジェクトのセットアップ
+`.env`はローカル環境専用の設定ファイルであり、認証情報を含み得るためGitへコミットしない。依存関係を変更する場合は`pyproject.toml`を更新し、`uv lock`で`uv.lock`を更新する。
 
-プロジェクトの環境構築、すべての依存関係のインストール、Playwrightが必要とするブラウザのダウンロードを行うには、プロジェクトのルートディレクトリで以下のコマンドを実行してください。
+## 3. 環境変数
 
-```shell
-hatch run setup
+| 変数                                | 用途                                  | 必須条件                           |
+| :---------------------------------- | :------------------------------------ | :--------------------------------- |
+| `OLLAMA_BASE_URL`                   | OllamaまたはLiteLLM互換エンドポイント | 記事同期時                         |
+| `KNOWAGE_BANK_MODEL`                | 使用するLLMモデル                     | 記事同期時                         |
+| `KNOWAGE_BANK_GITHUB_REPOSITORY`    | Issue同期対象の`owner/repository`     | GitHub同期時                       |
+| `KNOWAGE_BANK_GITHUB_TOKEN`         | GitHub API認証                        | 非公開リポジトリ・レート制限回避時 |
+| `KNOWAGE_BANK_DEEPRESEARCH_SSE_URL` | Deep Research MCP SSE URL             | Deep Research使用時                |
+| `GEMINI_API_KEY`                    | Geminiによる意図判定・Embedding       | Gemini使用時                       |
+
+## 4. 安全な動作確認
+
+外部サービスへ書き込まずに、ブラウザ履歴の収集・選定経路を確認する。
+
+```powershell
+uv run python src/scripts/run-personal-knowledge-collector.py --backend local --no-gemini --dry-run
 ```
 
-このコマンド一つで、以下の処理が自動的に実行されます。
+GitHub Issueを1件だけ処理する場合は、必要な環境変数、LLM接続先、必要に応じてMCP SSEサーバーを準備してから実行する。
 
-1.  プロジェクト専用の仮想環境がなければ作成します。
-2.  `pyproject.toml` に指定された、アプリケーション用および開発用のすべての依存関係をインストールします。
-3.  `[tool.hatch.scripts]` に定義されたセットアップスクリプトを実行します。これには以下の処理が含まれます。
-    *   `requirements.in` から `requirements.txt` を生成する。
-    *   `requirements.txt` の内容と環境を完全に同期させる。
-    *   Playwrightが必要とするブラウザドライバをインストールする。
-
-### 1.3 仮想環境のアクティベート
-
-プロジェクトの環境内で作業（例：スクリプトの手動実行など）を行いたい場合は、以下のコマンドで仮想環境のシェルに入ることができます。
-
-```shell
-hatch shell
+```powershell
+uv run python src/scripts/sync-github-issues.py --run-once
 ```
 
-### 1.4 テストの実行
+## 5. 検証コマンド
 
-このプロジェクトでは、`pytest` を使用してテストを実行するよう設定されています。以下のコマンドでテストスイート全体を実行できます。
-
-```shell
-hatch run test
+```powershell
+uv run pytest
+uv run pytest --run-integration tests/test_output_sync_integration.py
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy .
 ```
 
----
+通常の`pytest`は`integration`マーカー付きテストをスキップする。統合テストは`--run-integration`を明示して実行する。
 
-## 2. 依存関係の管理フロー
+## 6. 改訂履歴
 
-このプロジェクトでは、Pythonの依存関係を管理するために `pip-tools` を使用します。
-これにより、開発環境の再現性を高め、依存関係をクリーンに保ちます。
-
-### 2.1 概要
-
-依存関係は2つのファイルで管理されます。
-
--   `requirements.in`: プロジェクトが**直接**必要とするライブラリを記述するファイルです。**手で編集するのはこのファイルだけです。**
--   `requirements.txt`: `pip-compile`によって**自動生成**されるファイルです。プロジェクトの全依存ライブラリ（間接的なものも含む）とそのバージョンが固定されています。このファイルは手で編集しないでください。
-
-### 2.2 新しいライブラリを追加する手順
-
-1.  **`requirements.in` にライブラリを追加**
-    -   プロジェクトのルートにある `requirements.in` ファイルを開き、追加したいライブラリ名を追記します。バージョンを指定することも可能ですが、通常は指定せずに最新の互換バージョンを自動で選択させます。
-
-    ```
-    # requirements.in
-
-    flask
-    requests
-    # 新しいライブラリを追記
-    new-library
-    ```
-
-2.  **`requirements.txt` を更新**
-    -   ターミナルで以下のコマンドを実行し、`requirements.txt` を再生成します。
-
-    ```bash
-    pip-compile requirements.in
-    ```
-
-3.  **ライブラリのインストール**
-    -   更新された `requirements.txt` を使して、ライブラリをインストールします。
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **ファイルをコミット**
-    -   変更された `requirements.in` と `requirements.txt` の両方をGitにコミットしてください。
-
-### 2.3 新しい開発環境をセットアップする手順 (手動手続)
-
-1.  **リポジトリをクローン**
-    -   `git clone ...`
-
-2.  **仮想環境の作成と有効化** (推奨)
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # Linux/macOS
-    # .venv\Scripts\activate  # Windows
-    ```
-
-3.  **依存ライブラリのインストール**
-    -   `requirements.txt` を使って、プロジェクトに必要な全てのライブラリをインストールします。
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **初期セットアップの実行**
-    -   データベースのマイグレーションや、`esbuild`のセットアップを行います。
-
-    ```bash
-    python setup.py
-    ```
-
----
-
-## 3. 改訂履歴 (Change Log)
-
-| 版数 | 改訂日 | 変更者 | 変更内容・変更理由 (Why) |
-| :--- | :--- | :--- | :--- |
-| Rev.1.0 | 2026-08-13 | 開発チーム | TEMPLATEに準拠したドキュメント構造化およびフォーマット標準化（dependency_management.mdおよびtoml_project_setup.mdを統合・改訂） |
+| 版数    | 改訂日     | 変更内容                                                    |
+| :------ | :--------- | :---------------------------------------------------------- |
+| Rev.1.0 | 2026-08-13 | Hatch・pip-toolsを前提とした初版。                          |
+| Rev.1.1 | 2026-09-04 | 現行のuv、uv.lock、環境変数、動作確認・検証コマンドへ更新。 |
