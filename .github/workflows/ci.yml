@@ -54,3 +54,7 @@ jobs:
       - name: Run Pytest
         run: |
           uv run pytest
+
+      - name: Run Output Sync Integration Tests
+        run: |
+          uv run pytest --run-integration tests/test_output_sync_integration.py
