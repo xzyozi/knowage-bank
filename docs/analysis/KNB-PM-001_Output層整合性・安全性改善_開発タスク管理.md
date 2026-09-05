@@ -2,9 +2,9 @@
 title: "Output層整合性・安全性改善 開発タスク管理"
 document_type: "project_management"
 document_id: "KNB-PM-001"
-version: "0.6"
+version: "0.7"
 created_at: "2026-08-27"
-updated_at: "2026-09-03"
+updated_at: "2026-09-05"
 author: "knowage-bank 開発チーム"
 purpose: "GitHub IssueからMarkdown原本・HTML記事・インデックスを生成するOutput層について、実装状況、状態整合性、安全性、永続化の追跡事項を管理する。"
 related_documents:
