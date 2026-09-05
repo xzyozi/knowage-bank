@@ -17,6 +17,7 @@ spec = importlib.util.spec_from_file_location("sync_article_dates", script_path)
 if spec is None or spec.loader is None:
     raise RuntimeError("sync-article-dates.py ????????")
 sync_module = importlib.util.module_from_spec(spec)
+sys.modules["sync_article_dates"] = sync_module
 spec.loader.exec_module(sync_module)
 
 
