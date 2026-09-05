@@ -70,6 +70,7 @@ def test_save_article_source_verify_readback_mismatch(tmp_path: Any) -> None:
 
     def tamper_atomic_write(file_path: str, content: str) -> None:
         original_atomic_write(file_path, content)
+        # 書き込み後にファイルの中身を書き換えて改ざん状態を再現
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("---\ntitle: 壊れた内容\n---")
 
@@ -78,4 +79,5 @@ def test_save_article_source_verify_readback_mismatch(tmp_path: Any) -> None:
     with patch("app.article_source_manager.atomic_write_text", side_effect=tamper_atomic_write):
         with pytest.raises(ValueError, match="Saved article source content mismatch"):
             save_article_source(issue_number, markdown_content, source_dir=source_dir)
+
 
