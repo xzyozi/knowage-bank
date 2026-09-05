@@ -30,7 +30,13 @@ def save_article_source(
     output_path = os.path.join(target_dir, filename)
 
     atomic_write_text(output_path, markdown_text)
-    logger.info(f"Article source saved successfully: {output_path}")
+
+    with open(output_path, "r", encoding="utf-8") as f:
+        read_back = f.read()
+    if read_back != markdown_text:
+        raise ValueError(f"Saved article source content mismatch for issue #{issue_number}: {output_path}")
+
+    logger.info(f"Article source saved and verified successfully: {output_path}")
     return output_path
 
 
