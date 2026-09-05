@@ -119,7 +119,7 @@ flowchart TD
     Source --> Builder["markdown_textでMarkdown→HTML変換"]
     Builder --> Html["public/articles/<slug>.html\n原子的保存"]
     Html --> ValidateHtml["保存後検証: validate_html"]
-    ValidateHtml --> Index["public/index.htmlを同期\n通常上書き"]
+    ValidateHtml --> Index["public/index.htmlを同期\n原子的書込み・保存後検証・自動復元"]
     Index --> State["data/issue_status.jsonの状態を更新"]
 ```
 
@@ -225,7 +225,7 @@ Issue起点の記事生成では、記事本文の正規入力をMarkdownとす�
 | Issue状態    | `data/issue_status.json`、原子的JSON保存           | 試行・失敗・成果物情報を記録する。       |
 | Markdown原本 | `data/article_sources/issue-<番号>.md`、原子的保存 | 保存済み原本のみからHTMLを再生成できる。 |
 | 記事HTML     | `public/articles/<slug>.html`、原子的保存          | 保存後にHTML骨格・リンクを検証する。     |
-| index        | `public/index.html`、通常上書き                    | 原子的書込み・保存後検証・補償は未保証。 |
+| index        | `public/index.html`、原子的保存                    | 保存後にカード・日付・重複を検証し失敗時は旧ファイルへ復元。 |
 
 実装上の未完了機能は`docs/features/KNB-FEAT-001_Output層整合性・安全性残件.md`、文書更新は`docs/analysis/KNB-PM-001_Output層整合性・安全性改善_開発タスク管理.md`で管理する。
 
@@ -234,3 +234,4 @@ Issue起点の記事生成では、記事本文の正規入力をMarkdownとす�
 | 日付       | 内容                                                                      |
 | :--------- | :------------------------------------------------------------------------ |
 | 2026-08-31 | Output層のMarkdown正規入力、成果物の正本・保存方式、Feature管理境界を追記 |
+| 2026-09-05 | FEAT-01完了に伴い、indexの原子的書込み・保存後検証・自動復元の契約を反映  |
