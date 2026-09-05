@@ -35,12 +35,12 @@ related_documents:
 
 | テストID  | 状態                 | シナリオ                            | 期待結果                                                                                      |
 | :-------- | :------------------- | :---------------------------------- | :-------------------------------------------------------------------------------------------- |
-| IT-OUT-01 | 実装済み・検証待ち   | 有効なMarkdownを生成する            | 原本・HTML・indexを保存し、`processed`、成果物名、`index_synced=true`、試行IDを記録する。     |
-| IT-OUT-02 | 実装済み・検証待ち   | `unprocessed`がない                 | 外部呼出し・成果物保存・状態変更を行わず、対象なしとして終了する。                            |
-| IT-OUT-03 | 実装済み・検証待ち   | Markdown検証が失敗する              | 原本・HTML・indexを保存せず、`failed`に段階・理由・試行IDを記録する。                         |
-| IT-OUT-04 | 実装済み・検証待ち   | Markdown原本保存が失敗する          | `failed`を記録し、後続のHTML生成・index同期を実行しない。                                     |
-| IT-OUT-05 | 実装済み・検証待ち   | HTML保存後検証が失敗する            | 原本とHTMLは残し、index同期・`processed`更新を行わず`failed`を記録する。                      |
-| IT-OUT-06 | 実装済み・検証待ち   | index同期が失敗する                 | 原本・HTML成果物を記録し、`failed`、`index_synced=false`、失敗理由を記録する。                |
+| IT-OUT-01 | 検証完了             | 有効なMarkdownを生成する            | 原本・HTML・indexを保存し、`processed`、成果物名、`index_synced=true`、試行IDを記録する。     |
+| IT-OUT-02 | 検証完了             | `unprocessed`がない                 | 外部呼出し・成果物保存・状態変更を行わず、対象なしとして終了する。                            |
+| IT-OUT-03 | 検証完了             | Markdown検証が失敗する              | 原本・HTML・indexを保存せず、`failed`に段階・理由・試行IDを記録する。                         |
+| IT-OUT-04 | 検証完了             | Markdown原本保存が失敗する          | `failed`を記録し、後続のHTML生成・index同期を実行しない。                                     |
+| IT-OUT-05 | 検証完了             | HTML保存後検証が失敗する            | 原本とHTMLは残し、index同期・`processed`更新を行わず`failed`を記録する。                      |
+| IT-OUT-06 | 検証完了             | index同期が失敗する                 | 原本・HTML成果物を記録し、`failed`、`index_synced=false`、失敗理由を記録する。                |
 | IT-OUT-07 | 既存単体テスト       | 保存済みMarkdown原本から再生成する  | LLM・MCP・GitHub APIを呼ばずにHTMLを再生成できる。                                            |
 | IT-OUT-08 | 将来タスク（対象外） | 明示承認済みの失敗Issueを再試行する | 再試行承認の公開APIまたはCLI、対象Issue・理由、状態遷移を別機能で定義してから実装・検証する。 |
 
@@ -58,3 +58,4 @@ FEAT-04の統合テストは`pytest --run-integration tests/test_output_sync_int
 | Rev.1.1 | 2026-08-31 | Markdown入力、原本・HTML・index・状態遷移、再試行承認を現行契約へ更新。          |
 | Rev.1.2 | 2026-09-03 | FEAT-04のMCPスタブ、実装済みテストケース、index原子性・検証・復元の契約を反映。  |
 | Rev.1.3 | 2026-09-03 | IT-OUT-08を再試行承認ワークフローの将来タスクへ分離し、FEAT-04の対象範囲を確定。 |
+| Rev.1.4 | 2026-09-05 | FEAT-04統合テスト(IT-OUT-01〜06)のローカル実行による検証完了を反映。             |
