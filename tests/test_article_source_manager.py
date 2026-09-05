@@ -57,3 +57,25 @@ def test_rebuild_article_from_source(tmp_path: Any) -> None:
 
     assert "再生成テスト記事" in html_content
     assert "原本から再生成されたテキスト" in html_content
+
+
+def test_save_article_source_verify_readback_mismatch(tmp_path: Any) -> None:
+    """原本保存後の再読込内容が一致しない場合、ValueError が発生すること (OUT-03)"""
+    source_dir = str(tmp_path)
+    issue_number = 77
+    markdown_content = "---\ntitle: 不一致テスト\n---\n\n本文"
+
+    from app.article_source_manager import atomic_write_text
+    original_atomic_write = atomic_write_text
+
+    def tamper_atomic_write(file_path: str, content: str) -> None:
+        original_atomic_write(file_path, content)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("---\ntitle: 壊れた内容\n---")
+
+    from unittest.mock import patch
+
+    with patch("app.article_source_manager.atomic_write_text", side_effect=tamper_atomic_write):
+        with pytest.raises(ValueError, match="Saved article source content mismatch"):
+            save_article_source(issue_number, markdown_content, source_dir=source_dir)
+
