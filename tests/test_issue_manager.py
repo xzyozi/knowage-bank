@@ -59,69 +59,113 @@ def test_get_next_unprocessed_issue(temp_db_path: Any) -> None:
     assert next_issue is not None
     assert next_issue["number"] == 10
 
-    # 状態をすべて processed に更新
+    # 状態をすべて processing 経由で processed に更新
+    manager.update_issue_status(10, "processing")
     manager.update_issue_status(10, "processed")
+    manager.update_issue_status(20, "processing")
     manager.update_issue_status(20, "processed")
 
     # 未処理がない場合は None が返されること (IM-DB-04)
     assert manager.get_next_unprocessed_issue() is None
 
 
-def test_update_issue_status(temp_db_path: Any) -> None:
-    """IM-DB-05/06: ステータスの更新動作（正常系・異常系）"""
+def test_normalizes_legacy_issue_records(temp_db_path: Any) -> None:
+    """IM-DB-05: 旧形式・未知状態のレコードを現行スキーマへ正規化する。"""
     manager = IssueManager(db_path=temp_db_path)
-    test_data = {
-        "last_sync_at": None,
-        "issues": {
-            "10": {
-                "number": 10,
-                "title": "Issue 10",
-                "status": "unprocessed",
-                "processed_at": None,
-                "article_file": None,
+    manager._save_db(
+        {
+            "issues": {
+                "10": {"number": 10, "title": "Legacy", "status": "unknown"},
+                "11": {"title": "Missing fields", "status": "unprocessed"},
             }
-        },
-    }
-    manager._save_db(test_data)
+        }
+    )
 
-    # 正常系：processedに更新 (IM-DB-05)
-    manager.update_issue_status(
+    db_data = manager._load_db()
+    normalized_unknown = db_data["issues"]["10"]
+    normalized_missing = db_data["issues"]["11"]
+
+    assert db_data["last_sync_at"] is None
+    assert normalized_unknown["status"] == "unprocessed"
+    assert normalized_unknown["article_source_file"] is None
+    assert normalized_unknown["index_synced"] is False
+    assert normalized_unknown["failure_reason"] is None
+    assert normalized_missing["number"] == 11
+    assert normalized_missing["body"] == ""
+    assert set(normalized_missing) == {
+        "number",
+        "title",
+        "body",
+        "state",
+        "status",
+        "processed_at",
+        "article_file",
+        "article_source_file",
+        "index_synced",
+        "attempt_id",
+        "failed_at",
+        "failure_reason",
+    }
+
+    persisted = json.loads(open(temp_db_path, encoding="utf-8").read())
+    assert persisted == db_data
+
+
+def test_update_issue_status_enforces_allowed_transitions(temp_db_path: Any) -> None:
+    """IM-DB-06: 有効な遷移だけを保存し、終端状態からの再遷移を拒否する。"""
+    manager = IssueManager(db_path=temp_db_path)
+    manager._save_db(
+        {
+            "last_sync_at": None,
+            "issues": {"10": {"number": 10, "title": "Issue 10", "status": "unprocessed"}},
+        }
+    )
+
+    assert manager.update_issue_status(10, "processed") is False
+    assert manager.update_issue_status(10, "unsupported") is False
+    assert manager._load_db()["issues"]["10"]["status"] == "unprocessed"
+
+    assert manager.update_issue_status(10, "processing", attempt_id="attempt-1") is True
+    assert manager.update_issue_status(
         10,
         "processed",
         article_file="issue-10.html",
         article_source_file="issue-10.md",
         index_synced=True,
-        attempt_id="test-attempt-uuid",
-    )
-    db_data = manager._load_db()
-    issue = db_data["issues"]["10"]
-    assert issue["status"] == "processed"
-    assert issue["processed_at"] is not None
-    assert issue["article_file"] == "issue-10.html"
-    assert issue["article_source_file"] == "issue-10.md"
-    assert issue["index_synced"] is True
-    assert issue["attempt_id"] == "test-attempt-uuid"
-    assert issue["failed_at"] is None
-    assert issue["failure_reason"] is None
+    ) is True
+    processed = manager._load_db()["issues"]["10"]
+    assert processed["processed_at"] is not None
+    assert processed["index_synced"] is True
+    assert processed["failed_at"] is None
+    assert processed["failure_reason"] is None
+    assert manager.update_issue_status(10, "failed", failure_reason="must not retry") is False
+    assert manager._load_db()["issues"]["10"]["status"] == "processed"
 
-    # 正常系：failedに更新と失敗理由の記録
-    manager.update_issue_status(
-        10,
-        "failed",
-        failure_reason="[Stage 3] ValidationFailed: Forbidden HTML tag",
-        attempt_id="test-attempt-uuid-2",
-    )
-    db_data_failed = manager._load_db()
-    issue_failed = db_data_failed["issues"]["10"]
-    assert issue_failed["status"] == "failed"
-    assert issue_failed["failed_at"] is not None
-    assert issue_failed["failure_reason"] == "[Stage 3] ValidationFailed: Forbidden HTML tag"
-    assert issue_failed["attempt_id"] == "test-attempt-uuid-2"
 
-    # 異常系：存在しないIssueを指定 (IM-DB-06)
-    manager.update_issue_status(999, "processed")
-    db_data_after = manager._load_db()
-    assert "999" not in db_data_after["issues"]
+def test_update_issue_status_records_failure_from_processing(temp_db_path: Any) -> None:
+    """IM-DB-07: processingからfailedへの遷移では失敗情報を保持する。"""
+    manager = IssueManager(db_path=temp_db_path)
+    manager._save_db(
+        {
+            "last_sync_at": None,
+            "issues": {"10": {"number": 10, "title": "Issue 10", "status": "unprocessed"}},
+        }
+    )
+
+    assert manager.update_issue_status(10, "processing", attempt_id="attempt-2") is True
+    assert manager.update_issue_status(10, "failed", failure_reason="validation failed") is True
+    failed = manager._load_db()["issues"]["10"]
+    assert failed["failed_at"] is not None
+    assert failed["failure_reason"] == "validation failed"
+    assert manager.update_issue_status(10, "processing") is False
+
+
+def test_update_issue_status_missing_issue_is_ignored(temp_db_path: Any) -> None:
+    """IM-DB-08: 存在しないIssueの状態は更新しない。"""
+    manager = IssueManager(db_path=temp_db_path)
+
+    assert manager.update_issue_status(999, "processing") is False
+    assert "999" not in manager._load_db()["issues"]
 
 
 @patch("httpx.Client")

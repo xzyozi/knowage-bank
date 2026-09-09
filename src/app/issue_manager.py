@@ -13,6 +13,40 @@ from app.utils.logger import logger
 load_dotenv()
 
 
+ISSUE_STATUS_UNPROCESSED = "unprocessed"
+ISSUE_STATUS_PROCESSING = "processing"
+ISSUE_STATUS_PROCESSED = "processed"
+ISSUE_STATUS_FAILED = "failed"
+VALID_ISSUE_STATUSES = frozenset(
+    {
+        ISSUE_STATUS_UNPROCESSED,
+        ISSUE_STATUS_PROCESSING,
+        ISSUE_STATUS_PROCESSED,
+        ISSUE_STATUS_FAILED,
+    }
+)
+ALLOWED_STATUS_TRANSITIONS = {
+    ISSUE_STATUS_UNPROCESSED: {ISSUE_STATUS_PROCESSING},
+    ISSUE_STATUS_PROCESSING: {ISSUE_STATUS_PROCESSED, ISSUE_STATUS_FAILED},
+    ISSUE_STATUS_PROCESSED: set(),
+    ISSUE_STATUS_FAILED: set(),
+}
+ISSUE_RECORD_DEFAULTS: Dict[str, Any] = {
+    "number": None,
+    "title": "",
+    "body": "",
+    "state": None,
+    "status": ISSUE_STATUS_UNPROCESSED,
+    "processed_at": None,
+    "article_file": None,
+    "article_source_file": None,
+    "index_synced": False,
+    "attempt_id": None,
+    "failed_at": None,
+    "failure_reason": None,
+}
+
+
 class IssueManager:
     def __init__(self, db_path: Optional[str] = None) -> None:
         if db_path is None:
@@ -41,10 +75,64 @@ class IssueManager:
     def _load_db(self) -> dict:
         try:
             with open(self.db_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                db_data = json.load(f)
         except Exception as e:
             logger.error(f"Failed to load issue database: {e}")
             return {"last_sync_at": None, "issues": {}}
+
+        normalized_data, changed = self._normalize_db_data(db_data)
+        if changed:
+            self._save_db(normalized_data)
+        return normalized_data
+
+    def _normalize_db_data(self, db_data: Any) -> tuple[dict, bool]:
+        """既存の状態DBを現行スキーマに補完して返す。"""
+        if not isinstance(db_data, dict):
+            db_data = {}
+
+        normalized_data = dict(db_data)
+        changed = "last_sync_at" not in normalized_data
+        normalized_data.setdefault("last_sync_at", None)
+        raw_issues = normalized_data.get("issues")
+        if not isinstance(raw_issues, dict):
+            raw_issues = {}
+            changed = True
+
+        normalized_issues: dict[str, dict] = {}
+        for raw_key, raw_record in raw_issues.items():
+            issue_key = str(raw_key)
+            normalized_record = self._normalize_issue_record(issue_key, raw_record)
+            normalized_issues[issue_key] = normalized_record
+            if issue_key != raw_key or normalized_record != raw_record:
+                changed = True
+
+        if normalized_data.get("issues") != normalized_issues:
+            changed = True
+        normalized_data["issues"] = normalized_issues
+        return normalized_data, changed
+
+    def _normalize_issue_record(self, issue_key: str, raw_record: Any) -> dict:
+        """旧形式のIssueレコードを既定値で補完する。"""
+        default_number = int(issue_key) if issue_key.isdigit() else None
+        normalized_record = {**ISSUE_RECORD_DEFAULTS, "number": default_number}
+        if isinstance(raw_record, dict):
+            normalized_record.update(raw_record)
+
+        status = normalized_record["status"]
+        if not isinstance(status, str) or status not in VALID_ISSUE_STATUSES:
+            logger.warning("Issue #%s has an unknown status; normalizing it to unprocessed.", issue_key)
+            normalized_record["status"] = ISSUE_STATUS_UNPROCESSED
+        return normalized_record
+
+    @staticmethod
+    def _new_issue_record(issue_number: int, title: str, body: str, state: str | None) -> dict:
+        return {
+            **ISSUE_RECORD_DEFAULTS,
+            "number": issue_number,
+            "title": title,
+            "body": body,
+            "state": state,
+        }
 
     def _save_db(self, data: dict) -> None:
         try:
@@ -136,20 +224,7 @@ class IssueManager:
                 logger.debug(f"Updated existing local issue #{issue_num}: {title}")
             else:
                 # 新規Issueの登録
-                issues_dict[issue_num] = {
-                    "number": int(issue_num),
-                    "title": title,
-                    "body": body,
-                    "state": state,
-                    "status": "unprocessed",
-                    "processed_at": None,
-                    "article_file": None,
-                    "article_source_file": None,
-                    "index_synced": False,
-                    "attempt_id": None,
-                    "failed_at": None,
-                    "failure_reason": None,
-                }
+                issues_dict[issue_num] = self._new_issue_record(int(issue_num), title, body, state)
                 logger.info(f"Registered new local issue #{issue_num}: {title}")
 
         db_data["last_sync_at"] = new_sync_time
@@ -180,37 +255,50 @@ class IssueManager:
         index_synced: Optional[bool] = None,
         attempt_id: Optional[str] = None,
         failure_reason: Optional[str] = None,
-    ) -> None:
-        """特定のIssueの処理ステータスおよび成果物・失敗情報を更新する。"""
+    ) -> bool:
+        """許可された状態遷移と成果物・失敗情報を保存する。"""
         db_data = self._load_db()
-        issues = db_data.get("issues", {})
+        issues = db_data["issues"]
         issue_key = str(issue_number)
 
-        if issue_key in issues:
-            record = issues[issue_key]
-            record["status"] = status
-
-            if attempt_id is not None:
-                record["attempt_id"] = attempt_id
-            if article_source_file is not None:
-                record["article_source_file"] = article_source_file
-            if index_synced is not None:
-                record["index_synced"] = index_synced
-            if article_file is not None:
-                # HTML自体は先行段階で保存済みの場合があるため、失敗時も成果物情報を保持する。
-                record["article_file"] = article_file
-
-            if status == "processed":
-                record["processed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record["index_synced"] = True if index_synced is None else index_synced
-                record["failed_at"] = None
-                record["failure_reason"] = None
-            elif status == "failed":
-                record["failed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                record["failure_reason"] = failure_reason
-
-            db_data["issues"] = issues
-            self._save_db(db_data)
-            logger.info(f"Updated Issue #{issue_number} status to '{status}'")
-        else:
+        if issue_key not in issues:
             logger.error(f"Issue #{issue_number} not found in database. Status update failed.")
+            return False
+
+        record = issues[issue_key]
+        current_status = record["status"]
+        if status not in VALID_ISSUE_STATUSES:
+            logger.error("Rejected invalid status '%s' for Issue #%s.", status, issue_number)
+            return False
+        if status not in ALLOWED_STATUS_TRANSITIONS[current_status]:
+            logger.warning(
+                "Rejected status transition for Issue #%s: %s -> %s.",
+                issue_number,
+                current_status,
+                status,
+            )
+            return False
+
+        record["status"] = status
+        if attempt_id is not None:
+            record["attempt_id"] = attempt_id
+        if article_source_file is not None:
+            record["article_source_file"] = article_source_file
+        if index_synced is not None:
+            record["index_synced"] = index_synced
+        if article_file is not None:
+            # HTML自体は先行段階で保存済みの場合があるため、失敗時も成果物情報を保持する。
+            record["article_file"] = article_file
+
+        if status == ISSUE_STATUS_PROCESSED:
+            record["processed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            record["index_synced"] = True if index_synced is None else index_synced
+            record["failed_at"] = None
+            record["failure_reason"] = None
+        elif status == ISSUE_STATUS_FAILED:
+            record["failed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            record["failure_reason"] = failure_reason
+
+        self._save_db(db_data)
+        logger.info(f"Updated Issue #{issue_number} status to '{status}'")
+        return True
